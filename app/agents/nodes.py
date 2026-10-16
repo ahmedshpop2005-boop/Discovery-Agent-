@@ -20,6 +20,10 @@ from app.tools.registry import alternatives, get as get_spec, is_available, spec
 MAX_ADAPT_ITERATIONS = 3
 MAX_TOOLS_PER_RUN = 40
 
+# Capabilities that must always be planned: the Discovery objective is to build a
+# host/port/service inventory, so an LLM planner must never drop them.
+_CORE_CAPABILITIES = {"host_discovery", "port_discovery"}
+
 _ADMIN_PORTS = {22, 23, 3389, 5900, 512, 513, 514}
 _DATASTORE_PORTS = {3306, 5432, 6379, 27017, 11211, 9200, 9300, 9042, 1433, 1521}
 
@@ -118,7 +122,7 @@ def plan_node(state: AssessmentState) -> dict:
     )
     questions = discovery_input.get("discovery_questions") or []
 
-    planned, source = reasoning.propose_tool_plan(
+    planned_llm, source = reasoning.propose_tool_plan(
         objective=objective,
         target=state.get("target", ""),
         profile=profile,
@@ -126,6 +130,15 @@ def plan_node(state: AssessmentState) -> dict:
         deterministic=deterministic,
         discovery_questions=questions,
     )
+
+    if source == "llm":
+        # Guarantee the core discovery capabilities even if the model omitted them.
+        core = {name for name in deterministic if get_spec(name).capability in _CORE_CAPABILITIES}
+        keep = set(planned_llm) | core
+        planned = [name for name in allowed if name in keep]
+    else:
+        planned = planned_llm
+
     author = "LLM planner" if source == "llm" else "Deterministic planner"
     return {
         "tool_plan": planned,

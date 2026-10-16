@@ -84,6 +84,7 @@ class Settings:
     llm_base_url: str = os.getenv("APS_LLM_BASE_URL", "https://api.openai.com/v1")
     llm_model: str = os.getenv("APS_LLM_MODEL", "gpt-4o-mini")
     llm_timeout: float = _env_float("APS_LLM_TIMEOUT", 30.0)
+    llm_retries: int = _env_int("APS_LLM_RETRIES", 2)
 
     @property
     def user_agent(self) -> str:

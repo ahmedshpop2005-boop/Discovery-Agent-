@@ -66,6 +66,26 @@ def _supported_versions(host: str, port: int, sni: str | None) -> dict[str, bool
     return supported
 
 
+def _name_pairs(node):
+    """Yield ``(key, value)`` string pairs from an OpenSSL name structure.
+
+    Handles both the flat ``(('commonName', 'x'), ...)`` layout and the nested
+    ``((('commonName', 'x'),), ...)`` layout emitted by OpenSSL 3 builds, which
+    would otherwise raise ``ValueError`` from a plain ``dict(...)`` call.
+    """
+    if not node:
+        return
+    if isinstance(node, tuple) and len(node) == 2 and all(isinstance(part, str) for part in node):
+        yield node
+        return
+    for child in node:
+        yield from _name_pairs(child)
+
+
+def _name_dict(node) -> dict[str, str]:
+    return dict(_name_pairs(node))
+
+
 def _certificate(host: str, port: int) -> dict | None:
     try:
         pem = ssl.get_server_certificate((host, port), timeout=settings.socket_timeout)
@@ -83,8 +103,8 @@ def _certificate(host: str, port: int) -> dict | None:
         if tmp_path is not None:
             tmp_path.unlink(missing_ok=True)
 
-    subject = dict(decoded.get("subject", ()))
-    issuer = dict(decoded.get("issuer", ()))
+    subject = _name_dict(decoded.get("subject", ()))
+    issuer = _name_dict(decoded.get("issuer", ()))
     not_after = decoded.get("notAfter")
     return {
         "parsed": True,
@@ -96,7 +116,7 @@ def _certificate(host: str, port: int) -> dict | None:
         "not_before": decoded.get("notBefore"),
         "not_after": not_after,
         "days_until_expiry": _days_until(not_after),
-        "subject_alt_names": [value for _, value in decoded.get("subjectAltName", ())],
+        "subject_alt_names": [value for _, value in _name_pairs(decoded.get("subjectAltName", ()))],
         "self_signed": subject == issuer,
     }
 

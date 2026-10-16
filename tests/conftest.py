@@ -99,3 +99,14 @@ def disable_nmap(monkeypatch):
     """Keep the suite hermetic: pretend nmap is not installed."""
     monkeypatch.setattr("app.tools.nmap_tool.which", lambda _name: None)
     yield
+
+
+@pytest.fixture(autouse=True)
+def disable_llm(monkeypatch):
+    """Keep the suite hermetic and deterministic: never call out to an LLM.
+
+    A local ``.env`` (with e.g. an Ollama key) must not change test behaviour.
+    Individual LLM tests re-enable the provider explicitly.
+    """
+    monkeypatch.setattr("app.llm.provider.is_enabled", lambda: False)
+    yield

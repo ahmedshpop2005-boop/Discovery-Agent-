@@ -93,3 +93,15 @@ def test_advisory_match_no_match_for_patched_version():
     )
     result = get("advisory_match").function(ctx)
     assert result.data["matches"] == []
+
+
+def test_tls_name_dict_handles_flat_and_nested_layouts():
+    from app.tools.tls_tool import _name_dict
+
+    flat = (("commonName", "example.com"), ("countryName", "US"))
+    nested = ((("commonName", "example.com"),), (("countryName", "US"),))
+    expected = {"commonName": "example.com", "countryName": "US"}
+    assert _name_dict(flat) == expected
+    assert _name_dict(nested) == expected
+    assert _name_dict(()) == {}
+

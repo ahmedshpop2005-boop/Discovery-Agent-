@@ -24,7 +24,33 @@ def test_disabled_by_default(monkeypatch):
 def test_describe_never_leaks_key():
     info = provider.describe()
     assert "api_key" not in info
-    assert set(info) == {"enabled", "model", "base_url", "timeout"}
+    assert set(info) == {"enabled", "models", "base_url", "timeout", "retries"}
+
+
+def test_models_splits_chain():
+    assert provider.models("a,b , c") == ["a", "b", "c"]
+    assert provider.models("") == ["gpt-4o-mini"]
+
+
+def test_chat_retries_then_falls_through_model_chain(monkeypatch):
+    import httpx
+
+    monkeypatch.setattr(provider, "is_enabled", lambda: True)
+    monkeypatch.setattr(provider, "models", lambda raw=None: ["busy", "works"])
+    monkeypatch.setattr(provider.time, "sleep", lambda _seconds: None)
+    seen: list[str] = []
+
+    def fake_post(url, headers, payload, timeout):
+        seen.append(payload["model"])
+        request = httpx.Request("POST", url)
+        if payload["model"] == "busy":
+            return httpx.Response(503, request=request)
+        return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]}, request=request)
+
+    monkeypatch.setattr(provider, "_post", fake_post)
+    assert provider.chat([{"role": "user", "content": "hi"}]) == "ok"
+    assert seen[0] == "busy" and seen[-1] == "works"
+    assert seen.count("busy") == provider.settings.llm_retries + 1
 
 
 def test_extract_json_handles_code_fence():
@@ -102,6 +128,18 @@ def test_plan_node_deterministic_without_llm(monkeypatch):
     update = nodes.plan_node(state)
     assert update["tool_plan"]
     assert any("Deterministic planner" in e for e in update["events"])
+
+
+def test_plan_node_always_keeps_port_discovery(monkeypatch):
+    """A model that omits port discovery must not remove it from the plan."""
+    from app.tools.registry import get as get_spec
+
+    monkeypatch.setattr(provider, "is_enabled", lambda: True)
+    monkeypatch.setattr(provider, "chat", lambda messages, **kw: '{"tools": ["host_alive"]}')
+    update = nodes.plan_node(new_state("127.0.0.1", True, profile="safe"))
+    caps = {get_spec(name).capability for name in update["tool_plan"]}
+    assert "port_discovery" in caps
+    assert "host_discovery" in caps
 
 
 def test_llm_and_health_endpoints():
