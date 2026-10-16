@@ -21,6 +21,10 @@ reports/
 evidence/
 *.log
 
+# Secrets
+.env
+.env.local
+
 # OS / editor
 .DS_Store
 Thumbs.db
