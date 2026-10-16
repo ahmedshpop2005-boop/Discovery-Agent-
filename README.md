@@ -162,6 +162,27 @@ Full field tables, rejection rules and cases: [`docs/contracts/CONTRACT.md`](doc
 
 ---
 
+## Optional LLM reasoning
+
+The agent runs **fully offline by default**. Set an OpenAI-compatible API key and the
+Discovery planner will ask a model to choose among the registered, profile-eligible tools
+(the result is validated against that allow-list, so the model can never introduce an
+unregistered capability). Without a key, or on any error, the deterministic best-per-capability
+plan is used instead — behaviour and the test suite stay unchanged.
+
+```bash
+# PowerShell
+$env:APS_LLM_API_KEY="sk-..."          # or OPENAI_API_KEY
+$env:APS_LLM_MODEL="gpt-4o-mini"       # optional
+$env:APS_LLM_BASE_URL="https://api.openai.com/v1"   # optional, any OpenAI-compatible gateway
+```
+
+Copy `.env.example` to `.env` for a drop-in template. `GET /api/llm` reports whether LLM
+reasoning is active (it never returns the key). Only non-sensitive context (objective, target
+host, capability names) is sent — never credentials or raw evidence.
+
+---
+
 ## Install and run
 
 ```bash
@@ -182,8 +203,9 @@ services via the built-in TCP scanner.
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/` | Web interface |
-| GET | `/healthz` | Liveness probe |
+| GET | `/healthz` | Liveness probe (includes `llm` flag) |
 | GET | `/api/tools` | Tool catalog as JSON |
+| GET | `/api/llm` | Whether LLM reasoning is enabled (no key exposed) |
 | GET | `/api/contracts` | SentinelX Discovery contract JSON Schemas |
 | POST | `/api/discovery` | Run Discovery against a contract input, return the contract result |
 | POST | `/api/scan` | Run an assessment, return the full state as JSON |
@@ -232,6 +254,7 @@ autopentest-sentinel/
 │  ├─ safety/                 authorization.py · redaction.py
 │  ├─ models/schemas.py       Finding / EvidenceItem (Pydantic)
 │  ├─ knowledge/retrieval.py  local remediation retrieval
+│  ├─ llm/                    optional OpenAI-compatible planner (provider · reasoning)
 │  └─ reporting/pdf.py        PDF report builder
 ├─ data/knowledge/            remediation knowledge base + advisories.json
 ├─ data/wordlists/            subdomain wordlist

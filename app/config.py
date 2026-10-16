@@ -13,6 +13,29 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _load_dotenv() -> None:
+    """Load ``ROOT/.env`` into the environment without overwriting real vars.
+
+    Dependency-free helper so an optional ``.env`` file can carry the LLM API
+    key during local development. Absent file is a no-op.
+    """
+    path = ROOT / ".env"
+    if not path.exists():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+_load_dotenv()
+
+
 def _env_int(name: str, default: int) -> int:
     try:
         return int(os.getenv(name, str(default)))
@@ -25,6 +48,10 @@ def _env_float(name: str, default: float) -> float:
         return float(os.getenv(name, str(default)))
     except ValueError:
         return default
+
+
+def _env_str(name: str, default: str = "") -> str:
+    return os.getenv(name, default).strip()
 
 
 @dataclass(frozen=True)
@@ -51,9 +78,20 @@ class Settings:
     # Filesystem-managed options
     write_evidence: bool = os.getenv("APS_WRITE_EVIDENCE", "0") == "1"
 
+    # Optional LLM reasoning (OpenAI-compatible). Disabled when no key is set,
+    # so the agent runs fully deterministically/offline by default.
+    llm_api_key: str = _env_str("APS_LLM_API_KEY") or _env_str("OPENAI_API_KEY")
+    llm_base_url: str = os.getenv("APS_LLM_BASE_URL", "https://api.openai.com/v1")
+    llm_model: str = os.getenv("APS_LLM_MODEL", "gpt-4o-mini")
+    llm_timeout: float = _env_float("APS_LLM_TIMEOUT", 30.0)
+
     @property
     def user_agent(self) -> str:
         return f"AutoPentestSentinel/{self.version} (+authorized-assessment; non-destructive)"
+
+    @property
+    def llm_enabled(self) -> bool:
+        return bool(self.llm_api_key)
 
 
 settings = Settings()

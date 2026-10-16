@@ -11,6 +11,7 @@ from typing import Any
 
 from app.agents.state import AssessmentState, new_state
 from app.knowledge import retrieve
+from app.llm import reasoning
 from app.models.schemas import Confidence, EvidenceItem, Finding, Severity, ToolStatus
 from app.safety.authorization import authorize
 from app.tools.base import ToolContext, ToolResult
@@ -79,20 +80,14 @@ def _context(state: AssessmentState, profile: str) -> ToolContext:
     return ToolContext(target=target, scan_id=state.get("scan_id", ""), options=options)
 
 
-def plan_node(state: AssessmentState) -> dict:
-    """Select the best tool per capability for the profile.
+def _best_per_capability(specs: list) -> list[str]:
+    """Highest-priority tool of each capability, in registry order.
 
-    Only the highest-priority tool of each capability is planned; the executor
-    automatically falls back to the other tools of that capability if the
-    primary one fails or is unavailable (see :func:`collect_node`). This keeps
-    the default run lean while preserving redundancy.
+    Non-chosen tools of a capability remain as automatic fallbacks at execution
+    time (see :func:`collect_node`).
     """
-    profile = state.get("profile", "safe")
-    ctx = _context(state, profile)
-    best: dict[str, ToolSpec] = {}
-    for spec in specs_for_profile(profile):
-        if not is_available(spec, ctx):
-            continue
+    best: dict[str, Any] = {}
+    for spec in specs:
         current = best.get(spec.capability)
         if current is None or (spec.priority, spec.order, spec.name) < (
             current.priority,
@@ -100,12 +95,43 @@ def plan_node(state: AssessmentState) -> dict:
             current.name,
         ):
             best[spec.capability] = spec
-    planned = [spec.name for spec in sorted(best.values(), key=lambda s: (s.order, s.name))]
+    return [spec.name for spec in sorted(best.values(), key=lambda s: (s.order, s.name))]
+
+
+def plan_node(state: AssessmentState) -> dict:
+    """Select the tools to run for the profile.
+
+    An optional LLM planner may choose among the eligible (registered, profile
+    appropriate, currently-available) tools; its proposal is validated against
+    that allow-list. Without an LLM the deterministic best-per-capability plan
+    is used, so behaviour is unchanged when the API is not configured.
+    """
+    profile = state.get("profile", "safe")
+    ctx = _context(state, profile)
+    eligible = [spec for spec in specs_for_profile(profile) if is_available(spec, ctx)]
+    allowed = [spec.name for spec in sorted(eligible, key=lambda s: (s.order, s.name))]
+    deterministic = _best_per_capability(eligible)
+
+    discovery_input = state.get("discovery_input") or {}
+    objective = (discovery_input.get("common") or {}).get(
+        "objective", "Build a sourced inventory of the authorized target."
+    )
+    questions = discovery_input.get("discovery_questions") or []
+
+    planned, source = reasoning.propose_tool_plan(
+        objective=objective,
+        target=state.get("target", ""),
+        profile=profile,
+        allowed=allowed,
+        deterministic=deterministic,
+        discovery_questions=questions,
+    )
+    author = "LLM planner" if source == "llm" else "Deterministic planner"
     return {
         "tool_plan": planned,
         "executed": [],
         "iterations": 0,
-        "events": [f"Planner selected the '{profile}' profile: {', '.join(planned) or 'no tools'}."],
+        "events": [f"{author} selected the '{profile}' profile: {', '.join(planned) or 'no tools'}."],
     }
 
 

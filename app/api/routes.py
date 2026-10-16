@@ -12,6 +12,7 @@ from fastapi.templating import Jinja2Templates
 from app.agents.graph import run_assessment, run_discovery
 from app.config import ROOT, settings
 from app.contracts import DiscoveryInput, SCHEMA_MODELS
+from app.llm import provider as llm_provider
 from app.reporting import build_report
 from app.tools.registry import all_specs, specs_for_profile
 
@@ -23,7 +24,18 @@ _PROFILES = ["safe", "web", "network", "full"]
 
 @router.get("/healthz")
 def healthz() -> dict:
-    return {"status": "ok", "service": settings.app_name, "version": settings.version}
+    return {
+        "status": "ok",
+        "service": settings.app_name,
+        "version": settings.version,
+        "llm": settings.llm_enabled,
+    }
+
+
+@router.get("/api/llm")
+def llm_status() -> dict:
+    """Whether LLM reasoning is active (never exposes the API key)."""
+    return llm_provider.describe()
 
 
 @router.get("/api/tools")
