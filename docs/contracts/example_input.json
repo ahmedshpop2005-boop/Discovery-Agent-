@@ -1,0 +1,86 @@
+{
+  "common": {
+    "workspace_id": "ws-demo",
+    "run_id": "run-0001",
+    "task_id": "disc-run-0001",
+    "environment_id": "env-run-0001",
+    "environment_kind": "REAL",
+    "objective": "Build a sourced inventory of the authorized target.",
+    "selected_stages": [
+      "Discovery"
+    ],
+    "scope_ref": {
+      "scope_id": "scope-run-0001",
+      "version": 1,
+      "targets": [
+        "https://demo.example.com"
+      ],
+      "permitted_effects": [
+        "read-only"
+      ],
+      "expires_at": null
+    },
+    "context_refs": [],
+    "evidence_refs": [],
+    "available_capabilities": [
+      "host_alive@1.0",
+      "nmap_discovery@1.0",
+      "tcp_scan@1.0",
+      "masscan_scan@1.0",
+      "udp_scan@1.0",
+      "dns_recon@1.0",
+      "dns_nslookup@1.0",
+      "reverse_dns@1.0",
+      "dns_zone_transfer@1.0",
+      "http_posture@1.0",
+      "http_curl@1.0",
+      "tls_posture@1.0",
+      "tls_openssl@1.0",
+      "service_banner@1.0",
+      "ssh_algorithms@1.0",
+      "smtp_probe@1.0",
+      "ftp_probe@1.0",
+      "smb_probe@1.0",
+      "snmp_probe@1.0",
+      "redis_probe@1.0",
+      "mysql_probe@1.0",
+      "web_content@1.0",
+      "http_favicon@1.0",
+      "http_waf_detect@1.0",
+      "whois_lookup@1.0",
+      "subdomain_enum@1.0",
+      "traceroute@1.0",
+      "advisory_match@1.0"
+    ],
+    "remaining_budget": {}
+  },
+  "target_seeds": [
+    "https://demo.example.com"
+  ],
+  "discovery_limits": {
+    "ports": null,
+    "protocols": [
+      "tcp"
+    ],
+    "methods": [],
+    "scan_rate": null,
+    "concurrency": null,
+    "duration_seconds": null
+  },
+  "known_inventory_refs": [],
+  "access_profiles": [
+    {
+      "id": "external",
+      "kind": "external-probe",
+      "authenticated": false,
+      "privileges": [],
+      "secret_ref": null
+    }
+  ],
+  "network_context": {
+    "runner_id": "runner-local",
+    "source_network": null,
+    "known_topology": []
+  },
+  "discovery_questions": []
+}

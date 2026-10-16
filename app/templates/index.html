@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AutoPentest Sentinel</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <span class="eyebrow"><b></b> AGENTIC SECURITY ASSESSMENT</span>
+      <h1>AutoPentest <i>Sentinel</i></h1>
+      <p>Evidence-first, non-destructive assessment for authorized systems.</p>
+    </div>
+    <div class="shield"><span>&#10022;</span><small>SAFE<br>PROFILE</small></div>
+  </header>
+
+  <section class="card">
+    <div class="section-tag">01 / TARGET INTAKE</div>
+    <h2>Initialize assessment</h2>
+    <form id="scan-form" action="/scan" method="post">
+      <label>Authorized target
+        <input name="target" value="{{ target or '' }}" placeholder="https://client.example.com or 10.0.0.5" required>
+      </label>
+      <div class="row">
+        <label>Assessment profile
+          <select name="profile">
+            {% for p in profiles %}
+              <option value="{{ p }}" {% if (profile or 'safe') == p %}selected{% endif %}>{{ p }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label style="align-self:end">Registered tools
+          <input value="{{ tool_count }}" disabled>
+        </label>
+      </div>
+      <label class="check"><input type="checkbox" name="consent" value="true" required> I confirm I am authorized to assess this target.</label>
+      <button type="submit"><span>Run assessment</span><em>&#8599;</em></button>
+    </form>
+    <p class="hint">Non-destructive profiles: service discovery, DNS, HTTP posture, TLS posture, banners and well-known content. No exploitation, brute force or destructive testing.</p>
+  </section>
+
+  {% if result %}
+  <section class="results">
+    <div class="scan-header">
+      <div class="status {{ result.status }}"><b></b>{{ result.status|upper }}</div>
+      <span>SCAN ID &middot; {{ result.scan_id|default('BLOCKED') }}</span>
+    </div>
+
+    {% if result.errors %}
+      <div class="error">{{ result.errors|join('; ') }}</div>
+    {% endif %}
+
+    {% if result.status == 'completed' %}
+      <div class="metrics">
+        <div><b>{{ result.findings|length }}</b><span>Observations</span></div>
+        <div><b>{{ result.services|length }}</b><span>Open services</span></div>
+        <div><b>{{ result.results|length }}</b><span>Tools executed</span></div>
+        <div><b>{{ result.profile|default('safe') }}</b><span>Profile</span></div>
+      </div>
+
+      {% if result.coverage_gaps %}
+        <div class="limitations">
+          <span>&#9888;</span>
+          <div>
+            <b>Coverage limitations detected</b>
+            <p>{{ result.coverage_gaps|join(' · ') }}</p>
+          </div>
+        </div>
+      {% endif %}
+
+      <div class="console-head"><span>LIVE AGENT CONSOLE</span><span>{{ generated }}</span></div>
+      <section class="console">
+        {% for event in result.events %}
+          <p><b>&#9656;</b> {{ event }}</p>
+        {% endfor %}
+      </section>
+
+      <div class="console-head"><span>TOOL RESULTS</span><span>{{ result.results|length }} TOOLS</span></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Tool</th><th>Status</th><th>Summary</th><th>Evidence / Command</th></tr></thead>
+          <tbody>
+          {% for name, payload in result.results.items() %}
+            <tr>
+              <td>{{ name }}</td>
+              <td>{{ payload.status }}</td>
+              <td>{{ payload.summary }}</td>
+              <td>{{ payload.command or (payload.error or '—') }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="4" class="empty">No tool produced a result.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="console-head" style="margin-top:22px"><span>02 / ATTACK SURFACE</span><span>{{ result.services|length }} SERVICES</span></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Port</th><th>Proto</th><th>Service</th><th>Product / Version</th><th>Source</th></tr></thead>
+          <tbody>
+          {% for service in result.services %}
+            <tr>
+              <td>{{ service.port }}</td>
+              <td>{{ service.protocol }}</td>
+              <td><span class="open">{{ service.service }}</span></td>
+              <td>{{ service.product or 'Not identified' }} {{ service.version or '' }}</td>
+              <td>{{ service.source or '—' }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="5" class="empty">No open services were observed. This is not evidence of full coverage.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="console-head" style="margin-top:22px"><span>03 / EVIDENCE REVIEW</span><span>{{ result.findings|length }} FINDINGS</span></div>
+      <section class="findings">
+        {% for item in result.findings %}
+          <article>
+            <span class="badge {{ item.severity|lower }}">{{ item.severity }}</span>
+            <span class="confidence">{{ item.confidence }} &middot; {{ item.category }}</span>
+            <h3>{{ item.id }} &middot; {{ item.title }}</h3>
+            <p><b>Observed evidence</b>{{ item.evidence.detail }}</p>
+            <p><b>Recommended next step</b>{{ item.remediation }}</p>
+            {% for ref in item.references %}
+              <p class="reference">&#8627; Retrieved from {{ ref.source }}</p>
+            {% endfor %}
+          </article>
+        {% else %}
+          <div class="no-findings">No observations retained by the evidence validator. This does not prove the target is secure.</div>
+        {% endfor %}
+      </section>
+
+      <section class="activity">
+        <div class="section-tag">04 / WORKFLOW TRACE</div>
+        <h2>LangGraph decision trail</h2>
+        <ol>
+          {% for event in result.events %}<li><span>&#10003;</span>{{ event }}</li>{% endfor %}
+        </ol>
+        <form action="/report" method="post">
+          <input type="hidden" name="target" value="{{ target }}">
+          <input type="hidden" name="profile" value="{{ result.profile|default('safe') }}">
+          <input type="hidden" name="consent" value="true">
+          <button class="secondary" type="submit">Download analyst PDF <em>&#8595;</em></button>
+        </form>
+      </section>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  <footer>LANGGRAPH <span>&times;</span> MODULAR TOOLS <span>&times;</span> HUMAN REVIEW REQUIRED</footer>
+</main>
+<script>
+  document.getElementById('scan-form')?.addEventListener('submit', (event) => {
+    const button = event.currentTarget.querySelector('button');
+    button.classList.add('loading');
+    button.querySelector('span').textContent = 'Agent is collecting evidence…';
+  });
+</script>
+</body>
+</html>

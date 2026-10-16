@@ -1,0 +1,184 @@
+{
+  "$defs": {
+    "AgentStatus": {
+      "description": "Lifecycle status of a role task (common output ``status``).",
+      "enum": [
+        "DONE",
+        "MORE_WORK",
+        "BLOCKED",
+        "NEEDS_REVIEW",
+        "FAILED"
+      ],
+      "title": "AgentStatus",
+      "type": "string"
+    },
+    "EnvironmentKind": {
+      "enum": [
+        "REAL",
+        "TWIN"
+      ],
+      "title": "EnvironmentKind",
+      "type": "string"
+    },
+    "ProposedAction": {
+      "additionalProperties": false,
+      "description": "A typed proposal naming a registered capability and its inputs.",
+      "properties": {
+        "capability": {
+          "title": "Capability",
+          "type": "string"
+        },
+        "capability_version": {
+          "default": "1.0",
+          "title": "Capability Version",
+          "type": "string"
+        },
+        "stage": {
+          "title": "Stage",
+          "type": "string"
+        },
+        "asset_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Asset Ids",
+          "type": "array"
+        },
+        "environment": {
+          "$ref": "#/$defs/EnvironmentKind"
+        },
+        "parameter_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parameter Ref"
+        },
+        "evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Refs",
+          "type": "array"
+        },
+        "dependency_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Dependency Ids",
+          "type": "array"
+        },
+        "cleanup_plan_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cleanup Plan Ref"
+        }
+      },
+      "required": [
+        "capability",
+        "stage",
+        "environment"
+      ],
+      "title": "ProposedAction",
+      "type": "object"
+    },
+    "RequiredGate": {
+      "description": "External gate a result is waiting on, or ``None`` when none is needed.",
+      "enum": [
+        "INPUT",
+        "AUTHORIZATION",
+        "APPROVAL",
+        "REVIEW"
+      ],
+      "title": "RequiredGate",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Fields present in the output of every role.",
+  "properties": {
+    "status": {
+      "$ref": "#/$defs/AgentStatus"
+    },
+    "artifact_refs": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Artifact Refs",
+      "type": "array"
+    },
+    "evidence_refs": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Evidence Refs",
+      "type": "array"
+    },
+    "proposed_actions": {
+      "items": {
+        "$ref": "#/$defs/ProposedAction"
+      },
+      "title": "Proposed Actions",
+      "type": "array"
+    },
+    "assumptions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Assumptions",
+      "type": "array"
+    },
+    "coverage_gaps": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Coverage Gaps",
+      "type": "array"
+    },
+    "required_gate": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RequiredGate"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "concise_rationale": {
+      "title": "Concise Rationale",
+      "type": "string"
+    },
+    "next_objective": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Next Objective"
+    }
+  },
+  "required": [
+    "status",
+    "concise_rationale"
+  ],
+  "title": "CommonOutput",
+  "type": "object"
+}

@@ -1,0 +1,51 @@
+{
+  "_comment": "Small, illustrative local advisory index for the Discovery agent. Extend with NVD/OSV data in production.",
+  "products": {
+    "openssh": {
+      "aliases": ["openssh", "open ssh", "sshd"],
+      "rules": [
+        {"affected": "<7.4", "cve": "CVE-2016-6210", "severity": "Medium", "title": "OpenSSH user enumeration via timing", "remediation": "Upgrade to OpenSSH 7.4 or newer.", "reference": "https://nvd.nist.gov/vuln/detail/CVE-2016-6210"},
+        {"affected": "<8.0", "cve": "CVE-2019-6111", "severity": "Medium", "title": "scp client/source path validation issue", "remediation": "Upgrade to OpenSSH 8.0+.", "reference": "https://nvd.nist.gov/vuln/detail/CVE-2019-6111"}
+      ]
+    },
+    "apache": {
+      "aliases": ["apache", "httpd", "apache httpd", "apache http server"],
+      "rules": [
+        {"affected": "==2.4.49", "cve": "CVE-2021-41773", "severity": "Critical", "title": "Apache HTTP Server path traversal and RCE", "remediation": "Upgrade to 2.4.51+ immediately.", "reference": "https://nvd.nist.gov/vuln/detail/CVE-2021-41773"},
+        {"affected": "==2.4.50", "cve": "CVE-2021-42013", "severity": "Critical", "title": "Apache HTTP Server path traversal and RCE (bypass)", "remediation": "Upgrade to 2.4.51+ immediately.", "reference": "https://nvd.nist.gov/vuln/detail/CVE-2021-42013"},
+        {"affected": "<2.4.51", "cve": "CVE-2021-44790", "severity": "High", "title": "Apache mod_lua buffer overflow", "remediation": "Upgrade to 2.4.52+.", "reference": "https://nvd.nist.gov/vuln/detail/CVE-2021-44790"}
+      ]
+    },
+    "nginx": {
+      "aliases": ["nginx"],
+      "rules": [
+        {"affected": "<1.20.1", "cve": "CVE-2021-23017", "severity": "Medium", "title": "Nginx resolver off-by-one heap write", "remediation": "Upgrade to nginx 1.20.1 / 1.21.0+.", "reference": "https://nvd.nist.gov/vuln/detail/CVE-2021-23017"}
+      ]
+    },
+    "openssl": {
+      "aliases": ["openssl"],
+      "rules": [
+        {"affected": ">=1.0.1,<=1.0.1f", "cve": "CVE-2014-0160", "severity": "High", "title": "Heartbleed TLS heartbeat memory disclosure", "remediation": "Upgrade OpenSSL and reissue certificates/keys.", "reference": "https://nvd.nist.gov/vuln/detail/CVE-2014-0160"},
+        {"affected": ">=3.0.0,<3.0.7", "cve": "CVE-2022-3602", "severity": "High", "title": "OpenSSL X.509 punycode buffer overflow", "remediation": "Upgrade to OpenSSL 3.0.7+.", "reference": "https://nvd.nist.gov/vuln/detail/CVE-2022-3602"}
+      ]
+    },
+    "redis": {
+      "aliases": ["redis", "redis server", "keydb"],
+      "rules": [
+        {"affected": "*", "cve": null, "severity": "High", "title": "Redis potentially exposed without authentication", "remediation": "Set requirepass, bind to private interfaces and enable protected-mode.", "reference": "https://redis.io/docs/management/security/"}
+      ]
+    },
+    "mysql": {
+      "aliases": ["mysql", "mariadb"],
+      "rules": [
+        {"affected": "<5.7.33", "cve": "CVE-2021-2122", "severity": "Medium", "title": "MySQL/MariaDB denial of service in DML", "remediation": "Upgrade to the latest 5.7.x/8.0.x.", "reference": "https://nvd.nist.gov/vuln/detail/CVE-2021-2122"}
+      ]
+    },
+    "php": {
+      "aliases": ["php", "php-fpm"],
+      "rules": [
+        {"affected": ">=8.1.0,<8.1.31", "cve": "CVE-2024-4577", "severity": "High", "title": "PHP CGI argument injection on Windows", "remediation": "Upgrade to PHP 8.1.31 / 8.2.26 / 8.3.14+.", "reference": "https://nvd.nist.gov/vuln/detail/CVE-2024-4577"}
+      ]
+    }
+  }
+}

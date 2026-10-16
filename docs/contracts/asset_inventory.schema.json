@@ -1,0 +1,424 @@
+{
+  "$defs": {
+    "Asset": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_id": {
+          "title": "Asset Id",
+          "type": "string"
+        },
+        "identity": {
+          "title": "Identity",
+          "type": "string"
+        },
+        "addresses": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Addresses",
+          "type": "array"
+        },
+        "os": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Os"
+        },
+        "os_basis": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ObservationBasis"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "asset_id",
+        "identity"
+      ],
+      "title": "Asset",
+      "type": "object"
+    },
+    "EnvironmentKind": {
+      "enum": [
+        "REAL",
+        "TWIN"
+      ],
+      "title": "EnvironmentKind",
+      "type": "string"
+    },
+    "HostObservation": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_id": {
+          "title": "Asset Id",
+          "type": "string"
+        },
+        "category": {
+          "title": "Category",
+          "type": "string"
+        },
+        "key": {
+          "title": "Key",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
+        },
+        "basis": {
+          "$ref": "#/$defs/ObservationBasis",
+          "default": "configuration"
+        },
+        "evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "asset_id",
+        "category",
+        "key",
+        "value"
+      ],
+      "title": "HostObservation",
+      "type": "object"
+    },
+    "ObservationBasis": {
+      "description": "How an observation was obtained.\n\n``BANNER`` means an advertised/unauthenticated string. It must not be\ntreated as authenticated package evidence (see the Networking example:\n\"Label the version as a banner observation until authenticated package\nevidence supports it\").",
+      "enum": [
+        "banner",
+        "authenticated-package",
+        "configuration",
+        "inferred"
+      ],
+      "title": "ObservationBasis",
+      "type": "string"
+    },
+    "ObservationProvenance": {
+      "additionalProperties": false,
+      "properties": {
+        "observation_id": {
+          "title": "Observation Id",
+          "type": "string"
+        },
+        "source_tool": {
+          "title": "Source Tool",
+          "type": "string"
+        },
+        "tool_version": {
+          "default": "1.0",
+          "title": "Tool Version",
+          "type": "string"
+        },
+        "runner_id": {
+          "title": "Runner Id",
+          "type": "string"
+        },
+        "identity": {
+          "default": "external-probe",
+          "title": "Identity",
+          "type": "string"
+        },
+        "environment": {
+          "$ref": "#/$defs/EnvironmentKind"
+        },
+        "observed_at": {
+          "format": "date-time",
+          "title": "Observed At",
+          "type": "string"
+        },
+        "command": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Command"
+        },
+        "evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "observation_id",
+        "source_tool",
+        "runner_id",
+        "environment",
+        "observed_at"
+      ],
+      "title": "ObservationProvenance",
+      "type": "object"
+    },
+    "Reachability": {
+      "enum": [
+        "REACHABLE",
+        "FILTERED",
+        "UNREACHABLE",
+        "UNKNOWN"
+      ],
+      "title": "Reachability",
+      "type": "string"
+    },
+    "RelationshipKind": {
+      "enum": [
+        "observed",
+        "inferred"
+      ],
+      "title": "RelationshipKind",
+      "type": "string"
+    },
+    "RelationshipProposal": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/RelationshipKind",
+          "default": "observed"
+        },
+        "from_ref": {
+          "title": "From Ref",
+          "type": "string"
+        },
+        "to_ref": {
+          "title": "To Ref",
+          "type": "string"
+        },
+        "relation": {
+          "title": "Relation",
+          "type": "string"
+        },
+        "evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "from_ref",
+        "to_ref",
+        "relation"
+      ],
+      "title": "RelationshipProposal",
+      "type": "object"
+    },
+    "ServiceRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "service_id": {
+          "title": "Service Id",
+          "type": "string"
+        },
+        "asset_id": {
+          "title": "Asset Id",
+          "type": "string"
+        },
+        "port": {
+          "title": "Port",
+          "type": "integer"
+        },
+        "transport": {
+          "default": "tcp",
+          "title": "Transport",
+          "type": "string"
+        },
+        "name": {
+          "default": "unknown",
+          "title": "Name",
+          "type": "string"
+        },
+        "product": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Product"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        },
+        "version_basis": {
+          "$ref": "#/$defs/ObservationBasis",
+          "default": "banner"
+        },
+        "authenticated": {
+          "default": false,
+          "title": "Authenticated",
+          "type": "boolean"
+        },
+        "reachability": {
+          "$ref": "#/$defs/Reachability",
+          "default": "REACHABLE"
+        },
+        "uncertainty": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Uncertainty",
+          "type": "array"
+        },
+        "evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "service_id",
+        "asset_id",
+        "port"
+      ],
+      "title": "ServiceRecord",
+      "type": "object"
+    },
+    "UnassessedTarget": {
+      "additionalProperties": false,
+      "properties": {
+        "target": {
+          "title": "Target",
+          "type": "string"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "category": {
+          "default": "unsupported",
+          "title": "Category",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target",
+        "reason"
+      ],
+      "title": "UnassessedTarget",
+      "type": "object"
+    },
+    "Uncertainty": {
+      "additionalProperties": false,
+      "properties": {
+        "subject": {
+          "title": "Subject",
+          "type": "string"
+        },
+        "detail": {
+          "title": "Detail",
+          "type": "string"
+        },
+        "evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "subject",
+        "detail"
+      ],
+      "title": "Uncertainty",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "assets": {
+      "items": {
+        "$ref": "#/$defs/Asset"
+      },
+      "title": "Assets",
+      "type": "array"
+    },
+    "services": {
+      "items": {
+        "$ref": "#/$defs/ServiceRecord"
+      },
+      "title": "Services",
+      "type": "array"
+    },
+    "host_observations": {
+      "items": {
+        "$ref": "#/$defs/HostObservation"
+      },
+      "title": "Host Observations",
+      "type": "array"
+    },
+    "relationship_proposals": {
+      "items": {
+        "$ref": "#/$defs/RelationshipProposal"
+      },
+      "title": "Relationship Proposals",
+      "type": "array"
+    },
+    "observation_provenance": {
+      "items": {
+        "$ref": "#/$defs/ObservationProvenance"
+      },
+      "title": "Observation Provenance",
+      "type": "array"
+    },
+    "uncertainties": {
+      "items": {
+        "$ref": "#/$defs/Uncertainty"
+      },
+      "title": "Uncertainties",
+      "type": "array"
+    },
+    "unassessed_targets": {
+      "items": {
+        "$ref": "#/$defs/UnassessedTarget"
+      },
+      "title": "Unassessed Targets",
+      "type": "array"
+    }
+  },
+  "title": "AssetInventory",
+  "type": "object"
+}

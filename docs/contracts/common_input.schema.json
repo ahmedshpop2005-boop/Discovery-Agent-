@@ -1,0 +1,135 @@
+{
+  "$defs": {
+    "EnvironmentKind": {
+      "enum": [
+        "REAL",
+        "TWIN"
+      ],
+      "title": "EnvironmentKind",
+      "type": "string"
+    },
+    "ScopeRef": {
+      "additionalProperties": false,
+      "description": "Reference to the current versioned authorization and scope.",
+      "properties": {
+        "scope_id": {
+          "title": "Scope Id",
+          "type": "string"
+        },
+        "version": {
+          "default": 1,
+          "title": "Version",
+          "type": "integer"
+        },
+        "targets": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Targets",
+          "type": "array"
+        },
+        "permitted_effects": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Permitted Effects",
+          "type": "array"
+        },
+        "expires_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expires At"
+        }
+      },
+      "required": [
+        "scope_id"
+      ],
+      "title": "ScopeRef",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Fields present in the input of every role.",
+  "properties": {
+    "workspace_id": {
+      "title": "Workspace Id",
+      "type": "string"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "task_id": {
+      "title": "Task Id",
+      "type": "string"
+    },
+    "environment_id": {
+      "title": "Environment Id",
+      "type": "string"
+    },
+    "environment_kind": {
+      "$ref": "#/$defs/EnvironmentKind"
+    },
+    "objective": {
+      "title": "Objective",
+      "type": "string"
+    },
+    "selected_stages": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Selected Stages",
+      "type": "array"
+    },
+    "scope_ref": {
+      "$ref": "#/$defs/ScopeRef"
+    },
+    "context_refs": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Context Refs",
+      "type": "array"
+    },
+    "evidence_refs": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Evidence Refs",
+      "type": "array"
+    },
+    "available_capabilities": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Available Capabilities",
+      "type": "array"
+    },
+    "remaining_budget": {
+      "additionalProperties": {
+        "type": "number"
+      },
+      "title": "Remaining Budget",
+      "type": "object"
+    }
+  },
+  "required": [
+    "workspace_id",
+    "run_id",
+    "task_id",
+    "environment_id",
+    "environment_kind",
+    "objective",
+    "scope_ref"
+  ],
+  "title": "CommonInput",
+  "type": "object"
+}
