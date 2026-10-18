@@ -1,7 +1,8 @@
 """Tests for the optional LLM reasoning layer.
 
-Hermetic: no network is ever hit. The provider's ``chat`` is monkeypatched and
-``is_enabled`` is forced, so behaviour is verified without an API key.
+Hermetic: no network is ever hit. The provider's ``providers``/``_post`` are
+monkeypatched and ``is_enabled`` is forced, so behaviour is verified without an
+API key.
 """
 
 from __future__ import annotations
@@ -11,7 +12,7 @@ import pytest
 from app.agents import nodes
 from app.agents.state import new_state
 from app.llm import provider, reasoning
-from app.llm.provider import LLMUnavailable
+from app.llm.provider import LLMUnavailable, Provider
 
 
 def test_disabled_by_default(monkeypatch):
@@ -24,7 +25,7 @@ def test_disabled_by_default(monkeypatch):
 def test_describe_never_leaks_key():
     info = provider.describe()
     assert "api_key" not in info
-    assert set(info) == {"enabled", "models", "base_url", "timeout", "retries"}
+    assert set(info) == {"enabled", "providers", "timeout", "retries"}
 
 
 def test_models_splits_chain():
@@ -35,8 +36,10 @@ def test_models_splits_chain():
 def test_chat_retries_then_falls_through_model_chain(monkeypatch):
     import httpx
 
-    monkeypatch.setattr(provider, "is_enabled", lambda: True)
-    monkeypatch.setattr(provider, "models", lambda raw=None: ["busy", "works"])
+    monkeypatch.setattr(
+        provider, "providers",
+        lambda: [Provider(name="primary", base_url="http://p/v1", api_key="k", models=("busy", "works"))],
+    )
     monkeypatch.setattr(provider.time, "sleep", lambda _seconds: None)
     seen: list[str] = []
 
@@ -51,6 +54,31 @@ def test_chat_retries_then_falls_through_model_chain(monkeypatch):
     assert provider.chat([{"role": "user", "content": "hi"}]) == "ok"
     assert seen[0] == "busy" and seen[-1] == "works"
     assert seen.count("busy") == provider.settings.llm_retries + 1
+
+
+def test_chat_falls_back_to_secondary_provider(monkeypatch):
+    import httpx
+
+    monkeypatch.setattr(
+        provider, "providers",
+        lambda: [
+            Provider(name="primary", base_url="http://primary/v1", api_key="k", models=("m1",)),
+            Provider(name="fallback", base_url="http://local/v1", api_key="", models=("m2",)),
+        ],
+    )
+    monkeypatch.setattr(provider.time, "sleep", lambda _seconds: None)
+    seen: list[str] = []
+
+    def fake_post(url, headers, payload, timeout):
+        seen.append(url)
+        request = httpx.Request("POST", url)
+        if "primary" in url:
+            return httpx.Response(503, request=request)
+        return httpx.Response(200, json={"choices": [{"message": {"content": "local"}}]}, request=request)
+
+    monkeypatch.setattr(provider, "_post", fake_post)
+    assert provider.chat([{"role": "user", "content": "hi"}]) == "local"
+    assert seen[-1] == "http://local/v1/chat/completions"
 
 
 def test_extract_json_handles_code_fence():

@@ -86,6 +86,12 @@ class Settings:
     llm_timeout: float = _env_float("APS_LLM_TIMEOUT", 30.0)
     llm_retries: int = _env_int("APS_LLM_RETRIES", 2)
 
+    # Optional secondary provider (e.g. a local Ollama) used when the primary
+    # provider is unreachable or overloaded. Enabled when its base URL is set.
+    llm_fallback_api_key: str = _env_str("APS_LLM_FALLBACK_API_KEY")
+    llm_fallback_base_url: str = _env_str("APS_LLM_FALLBACK_BASE_URL")
+    llm_fallback_model: str = _env_str("APS_LLM_FALLBACK_MODEL", "llama3.2")
+
     @property
     def user_agent(self) -> str:
         return f"AutoPentestSentinel/{self.version} (+authorized-assessment; non-destructive)"

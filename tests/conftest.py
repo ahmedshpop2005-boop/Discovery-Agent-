@@ -105,8 +105,8 @@ def disable_nmap(monkeypatch):
 def disable_llm(monkeypatch):
     """Keep the suite hermetic and deterministic: never call out to an LLM.
 
-    A local ``.env`` (with e.g. an Ollama key) must not change test behaviour.
-    Individual LLM tests re-enable the provider explicitly.
+    A local ``.env`` (with e.g. an Ollama fallback) must not change test
+    behaviour. Individual LLM tests re-enable the provider explicitly.
     """
-    monkeypatch.setattr("app.llm.provider.is_enabled", lambda: False)
+    monkeypatch.setattr("app.llm.provider.providers", lambda: [])
     yield
