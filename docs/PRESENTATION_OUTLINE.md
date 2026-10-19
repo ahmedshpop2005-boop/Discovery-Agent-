@@ -21,7 +21,7 @@ guard ▸ plan ▸ collect ▸ adapt ↺ ▸ validate ▸ report
 * **adapt** — new observations trigger follow-ups (e.g. port 443 ⇒ TLS probe).
 * **validate** — evidence thresholds; failures become coverage gaps.
 
-## 4. Tool stack (28 tools, all real, all non-destructive)
+## 4. Tool stack (36 tools, all real, all non-destructive)
 Nmap · masscan · built-in async TCP scan · host-alive · UDP · traceroute · banner grab ·
 SSH/SMTP/FTP/SMB/SNMP/Redis/MySQL probes · DNS (A/AAAA/MX/NS/TXT) · nslookup · reverse DNS ·
 zone-transfer attempt · subdomains · HTTP posture · curl · favicon · WAF detection ·

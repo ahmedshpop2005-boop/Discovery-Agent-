@@ -34,12 +34,24 @@ This is what keeps a scan useful when a binary is missing or a probe is blocked.
 | Capability | Primary | Fallbacks |
 | --- | --- | --- |
 | `port_discovery` | `nmap_discovery` | `masscan_scan`, `tcp_scan` |
+| `host_discovery` | `host_alive` | `netdiscover` |
 | `dns_resolve` | `dns_recon` | `dns_nslookup` |
+| `subdomain` | `amass_enum` | `subdomain_enum` |
 | `http_headers` | `http_posture` | `http_curl` |
+| `http_waf_detect` | `wafw00f` | `http_waf_detect` |
+| `web_content` | `gobuster_scan` | `web_content` |
+| `smb_info` | `enum4linux_ng` | `smb_probe` |
 | `tls_info` | `tls_posture` | `tls_openssl` |
 
 Fallbacks only offer tools inside the active profile, so redundancy never widens the scan envelope
 on its own.
+
+### External recon wrappers
+
+`amass_enum`, `theharvester`, `dnsrecon`, `netdiscover`, `whatweb`, `gobuster_scan`, `wafw00f` and
+`enum4linux_ng` shell out to their upstream binaries with fixed, injection-safe argument lists.
+None is required: when the binary is missing the tool returns `status=unavailable` and the executor
+falls back to the built-in tool that shares its capability (see the table above).
 
 ---
 
@@ -66,6 +78,12 @@ on its own.
 * **Behaviour:** ICMP ping (when available) plus a quick TCP-connect check on common ports.
 * **Output:** `data.icmp`, `data.tcp[]`.
 
+### `netdiscover` — ARP host discovery *(fallback)*
+* **Capability:** `host_discovery` (priority 60) · **Profiles:** `network`, `full`
+* **Requires:** the `netdiscover` binary (Linux/ARP only)
+* **Behaviour:** `netdiscover -r <host>/32 -N`; parsed into `data.hosts[]` = `{ip, mac, vendor}`
+* **Degrades:** `unavailable` off-segment or when the binary is absent.
+
 ### `udp_scan` — Bounded UDP probe
 * **Profiles:** `network`, `full` · **Options:** `udp_ports`
 * **Behaviour:** sends a small datagram and records any response (no amplification).
@@ -91,9 +109,14 @@ is attempted and no remote state is changed.
 | `smtp_probe` | `smtp_info` | 25 | banner + `EHLO` capabilities |
 | `ftp_probe` | `ftp_info` | 21 | banner + `FEAT` (cleartext warning) |
 | `smb_probe` | `smb_info` | 445 | SMB dialect + signing-required flag |
+| `enum4linux_ng` | `smb_info` (prio 40) | 445 | shares, users, groups, OS info (`enum4linux-ng -A`) |
 | `snmp_probe` | `snmp_info` | 161/udp | single community-`public` `sysDescr` `GET` |
 | `redis_probe` | `redis_info` | 6379 | read-only `INFO` (auth state, version) |
 | `mysql_probe` | `mysql_info` | 3306 | server greeting/version banner |
+
+`enum4linux_ng` is an external read-only wrapper: it runs `enum4linux-ng -A <host>` and parses the
+JSON report. No credential attacks are performed; when the binary is absent the built-in
+`smb_probe` remains the `smb_info` fallback.
 
 ---
 
@@ -123,6 +146,24 @@ is attempted and no remote state is changed.
 * **Options:** `subdomain_words`
 * **Wordlist:** `data/wordlists/subdomains.txt` (bounded by `APS_SUBDOMAIN_LIMIT`, default 60)
 * **Output:** `data.subdomains` = `{ "<fqdn>": ["<ip>", ...] }`
+
+### `amass_enum` — OWASP Amass passive enumeration *(primary)*
+* **Capability:** `subdomain` (priority 40) · **Profiles:** `network`, `full`
+* **Command:** `amass enum -passive -d <domain> -timeout <n>`
+* **Output:** `data.subdomains[]` · **Degrades:** `unavailable` when Amass is absent
+* **Note:** passive OSINT sources only — no active DNS brute force.
+
+### `dnsrecon` — Standard DNS enumeration
+* **Capability:** `dns_enum` (priority 40) · **Profiles:** `web`, `network`, `full`
+* **Command:** `dnsrecon -d <domain> -t std -j <report.json>`
+* **Output:** `data.records[]` = `{type, name, address, raw}`
+* **Degrades:** `unavailable` when dnsrecon is absent; the standard enumeration never brute-forces.
+
+### `theharvester` — Public-source OSINT
+* **Capability:** `osint` (priority 50) · **Profiles:** `web`, `full`
+* **Command:** `theHarvester -d <domain> -b duckduckgo,bing -l <n>`
+* **Output:** `data.emails[]`, `data.hosts[]`, `data.ips[]`
+* **Note:** public sources only; an empty result is not proof of absence.
 
 ### `whois_lookup` — Registration lookup
 * **Requires:** hostname · **Transport:** TCP/43 with IANA referral
@@ -163,7 +204,26 @@ is attempted and no remote state is changed.
 ### `http_waf_detect` — WAF/CDN/edge detection
 * **Profiles:** `web`, `full` · **Output:** `data.detected[]` from header signatures.
 
-### `web_content` — Well-known content discovery
+### `whatweb` — Web technology fingerprinting
+* **Capability:** `http_fingerprint` (priority 40) · **Profiles:** `web`, `full`
+* **Command:** `whatweb --color=never --log-json <report> <url>`
+* **Output:** `data.technologies[]`, `data.plugins{ name: {version, string} }`
+* **Degrades:** `unavailable` when WhatWeb is absent · **Note:** fingerprinting only.
+
+### `wafw00f` — WAF fingerprinting *(primary)*
+* **Capability:** `http_waf_detect` (priority 40) · **Profiles:** `web`, `full`
+* **Command:** `wafw00f <url> -f json`
+* **Output:** `data.detected`, `data.firewall`, `data.manufacturer`
+* **Degrades:** `unavailable` when wafw00f is absent (falls back to `http_waf_detect` headers).
+
+### `gobuster_scan` — Directory/content discovery *(primary)*
+* **Capability:** `web_content` (priority 40) · **Profiles:** `web`, `full`
+* **Command:** `gobuster dir -u <url> -w <wordlist> -q -t 20 --timeout 5s`
+* **Wordlist:** `data/wordlists/common.txt` (bounded; override with option `content_words`)
+* **Output:** `data.paths[]` = `{path, status, size}`, `data.tested`
+* **Degrades:** `unavailable` when Gobuster is absent · **Note:** bounded discovery, not brute force.
+
+### `web_content` — Well-known content discovery *(fallback)*
 * **Profiles:** `web`, `full`
 * **Fetches:** `/robots.txt`, `/sitemap.xml`, `/.well-known/security.txt`
 * **Output:** `data.found` = per-path `{status, size, disallow[], sitemaps[], urls[], fields[]}`

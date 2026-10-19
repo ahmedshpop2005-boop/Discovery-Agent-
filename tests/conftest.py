@@ -96,8 +96,14 @@ def banner_server():
 
 @pytest.fixture(autouse=True)
 def disable_nmap(monkeypatch):
-    """Keep the suite hermetic: pretend nmap is not installed."""
-    monkeypatch.setattr("app.tools.nmap_tool.which", lambda _name: None)
+    """Keep the suite hermetic: pretend external recon binaries are absent."""
+    for module in (
+        "nmap_tool",
+        "osint_extra_tool",
+        "webscan_extra_tool",
+        "smb_extra_tool",
+    ):
+        monkeypatch.setattr(f"app.tools.{module}.which", lambda _name: None)
     yield
 
 

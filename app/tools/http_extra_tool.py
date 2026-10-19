@@ -119,7 +119,7 @@ def http_favicon(ctx: ToolContext) -> ToolResult:
     description="Detect WAF/CDN/edge in front of the application from headers.",
     category="WEB",
     effect_class=EffectClass.PASSIVE,
-    capability="http_fingerprint",
+    capability="http_waf_detect",
     requires=("base_url",),
     profiles=("web", "full"),
     order=63,

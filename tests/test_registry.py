@@ -42,6 +42,15 @@ def test_expected_tools_registered():
         "web_content",
         "whois_lookup",
         "subdomain_enum",
+        # external recon tools
+        "amass_enum",
+        "theharvester",
+        "dnsrecon",
+        "netdiscover",
+        "whatweb",
+        "gobuster_scan",
+        "wafw00f",
+        "enum4linux_ng",
     } <= names
 
 
@@ -51,6 +60,19 @@ def test_redundant_capabilities_have_multiple_tools():
     assert {"tls_posture", "tls_openssl"} <= {s.name for s in caps["tls_info"]}
     assert {"dns_recon", "dns_nslookup"} <= {s.name for s in caps["dns_resolve"]}
     assert {"nmap_discovery", "tcp_scan"} <= {s.name for s in caps["port_discovery"]}
+    # external tools share a capability with a pure-Python fallback
+    assert {"subdomain_enum", "amass_enum"} <= {s.name for s in caps["subdomain"]}
+    assert {"host_alive", "netdiscover"} <= {s.name for s in caps["host_discovery"]}
+    assert {"web_content", "gobuster_scan"} <= {s.name for s in caps["web_content"]}
+    assert {"smb_probe", "enum4linux_ng"} <= {s.name for s in caps["smb_info"]}
+    assert {"http_waf_detect", "wafw00f"} <= {s.name for s in caps["http_waf_detect"]}
+
+
+def test_external_primary_tools_rank_before_fallbacks():
+    caps = capabilities()
+    assert caps["subdomain"][0].name == "amass_enum"
+    assert caps["smb_info"][0].name == "enum4linux_ng"
+    assert caps["http_waf_detect"][0].name == "wafw00f"
 
 
 def test_alternatives_respect_profile_boundaries():

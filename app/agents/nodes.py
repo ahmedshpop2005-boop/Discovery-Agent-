@@ -15,14 +15,10 @@ from app.llm import reasoning
 from app.models.schemas import Confidence, EvidenceItem, Finding, Severity, ToolStatus
 from app.safety.authorization import authorize
 from app.tools.base import ToolContext, ToolResult
-from app.tools.registry import alternatives, get as get_spec, is_available, specs_for_profile
+from app.tools.registry import alternatives, capabilities, get as get_spec, is_available, specs_for_profile
 
 MAX_ADAPT_ITERATIONS = 3
 MAX_TOOLS_PER_RUN = 40
-
-# Capabilities that must always be planned: the Discovery objective is to build a
-# host/port/service inventory, so an LLM planner must never drop them.
-_CORE_CAPABILITIES = {"host_discovery", "port_discovery"}
 
 _ADMIN_PORTS = {22, 23, 3389, 5900, 512, 513, 514}
 _DATASTORE_PORTS = {3306, 5432, 6379, 27017, 11211, 9200, 9300, 9042, 1433, 1521}
@@ -132,9 +128,9 @@ def plan_node(state: AssessmentState) -> dict:
     )
 
     if source == "llm":
-        # Guarantee the core discovery capabilities even if the model omitted them.
-        core = {name for name in deterministic if get_spec(name).capability in _CORE_CAPABILITIES}
-        keep = set(planned_llm) | core
+        # The LLM may add tools, but it can never drop the deterministic baseline
+        # (the best tool per capability), so no capability is silently lost.
+        keep = set(planned_llm) | set(deterministic)
         planned = [name for name in allowed if name in keep]
     else:
         planned = planned_llm
@@ -244,7 +240,12 @@ def collect_node(state: AssessmentState) -> dict:
 
 
 def adapt_node(state: AssessmentState) -> dict:
-    """Add follow-up tools justified by the observations collected so far."""
+    """Add follow-up tools justified by the observations collected so far.
+
+    Follow-ups are requested by *capability* so the best available tool for the
+    job is chosen (with the other same-capability tools kept as automatic
+    fallbacks at execution time).
+    """
     profile = state.get("profile", "safe")
     executed = set(state.get("executed", []))
     plan = list(state.get("tool_plan", []))
@@ -252,32 +253,56 @@ def adapt_node(state: AssessmentState) -> dict:
     results = state.get("results", {})
     services = state.get("services", [])
     events: list[str] = []
+    ctx = _context({**state, "services": services}, profile)
+    allowed = {spec.name for spec in specs_for_profile(profile)}
 
     def add(tool_name: str, reason: str) -> None:
         if tool_name not in plan and tool_name not in executed:
             plan.append(tool_name)
             events.append(f"Adaptive step: {tool_name} ({reason}).")
 
+    def add_capability(capability: str, reason: str) -> None:
+        for spec in capabilities().get(capability, []):
+            if spec.name in executed or spec.name in plan or spec.name not in allowed:
+                continue
+            if not is_available(spec, ctx):
+                continue
+            add(spec.name, reason)
+            return
+
     ports = {int(s.get("port", 0)) for s in services}
     http = results.get("http_posture", {})
     http_ok = http.get("status") == ToolStatus.OK.value
+    hostname = not ctx.target.is_ip
 
     if iterations <= MAX_ADAPT_ITERATIONS:
         if services:
-            add("service_banner", "open services discovered")
-            add("advisory_match", "map discovered products/versions to advisories")
+            add_capability("service_banner", "open services discovered")
+            add_capability("advisory", "map discovered products/versions to advisories")
         if (443 in ports or state.get("scheme") == "https") and "tls_posture" not in executed:
-            add("tls_posture", "a TLS endpoint is present")
+            add_capability("tls_info", "a TLS endpoint is present")
+        if hostname and profile in {"web", "network", "full"}:
+            add_capability("dns_enum", "domain target present")
+        if hostname and profile in {"web", "full"}:
+            add_capability("osint", "domain target present")
+        if hostname and profile in {"network", "full"}:
+            add_capability("subdomain", "domain target present")
         if http_ok and profile in {"web", "full"}:
-            add("web_content", "HTTP service responded")
+            add_capability("web_content", "HTTP service responded")
+            add_capability("http_fingerprint", "HTTP service responded")
+            add_capability("http_waf_detect", "HTTP service responded")
         if profile in {"network", "full"}:
-            for probe, trigger in (("ssh_algorithms", 22), ("smtp_probe", 25), ("ftp_probe", 21), ("smb_probe", 445), ("redis_probe", 6379), ("mysql_probe", 3306)):
+            for capability, trigger in (
+                ("ssh_info", 22),
+                ("smtp_info", 25),
+                ("ftp_info", 21),
+                ("smb_info", 445),
+                ("redis_info", 6379),
+                ("mysql_info", 3306),
+            ):
                 if trigger in ports:
-                    add(probe, f"service on port {trigger} discovered")
+                    add_capability(capability, f"service on port {trigger} discovered")
 
-    # Drop any tool that cannot run for this target or is outside the profile.
-    ctx = _context(state, profile)
-    allowed = {spec.name for spec in specs_for_profile(profile)}
     plan = [name for name in plan if name in allowed and is_available(get_spec(name), ctx)]
 
     if not events:

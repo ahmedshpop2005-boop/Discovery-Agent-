@@ -13,10 +13,11 @@ This repository implements the **Discovery agent** of the *SentinelX AI* shared-
 (owner: Shaaban). It discovers hosts, ports, services, versions and available configuration, and
 produces a sourced `AssetInventory` for the Pentesting agent.
 
-On top of that it has a modular, registry-based tool layer with **28 real, non-destructive
-collection tools** (Nmap plus 27 built-ins) and automatic **redundancy/fallback**: if a tool or
-its external binary is missing, the agent transparently switches to another tool that performs
-the same job.
+On top of that it has a modular, registry-based tool layer with **36 real, non-destructive
+collection tools** (Nmap plus 35 built-ins, including optional wrappers for Amass, theHarvester,
+DNSRecon, WhatWeb, Gobuster, enum4linux-ng, Wafw00f and Netdiscover) and automatic
+**redundancy/fallback**: if a tool or its external binary is missing, the agent transparently
+switches to another tool that performs the same job.
 
 ---
 
@@ -24,7 +25,7 @@ the same job.
 
 | Area | Before | Now |
 | --- | --- | --- |
-| Tools | Nmap + 1 HTTP + 1 TLS check | 28 registered tools (see catalog) |
+| Tools | Nmap + 1 HTTP + 1 TLS check | 36 registered tools (see catalog) |
 | Tool layer | functions in `scanners.py` | `app/tools/` registry, metadata, capabilities |
 | Redundancy | none | capability + priority with automatic fallback |
 | Workflow | fixed 3 nodes | adaptive planner → executor → **re-planner** → validator |
@@ -34,12 +35,13 @@ the same job.
 
 ### New tools (beyond Nmap)
 
-* **Discovery:** `masscan_scan`, `host_alive`, `udp_scan`, `traceroute`.
-* **DNS:** `dns_nslookup`, `reverse_dns`, `dns_zone_transfer`.
-* **HTTP/Web:** `http_curl`, `http_favicon`, `http_waf_detect`.
+* **Discovery:** `masscan_scan`, `host_alive`, `udp_scan`, `traceroute`, `netdiscover`.
+* **DNS:** `dns_nslookup`, `reverse_dns`, `dns_zone_transfer`, `dnsrecon`, `amass_enum`.
+* **HTTP/Web:** `http_curl`, `http_favicon`, `http_waf_detect`, `whatweb`, `gobuster_scan`, `wafw00f`.
 * **TLS:** `tls_openssl`.
-* **Service probes:** `ssh_algorithms`, `smtp_probe`, `ftp_probe`, `smb_probe`, `snmp_probe`,
-  `redis_probe`, `mysql_probe`.
+* **Service probes:** `ssh_algorithms`, `smtp_probe`, `ftp_probe`, `smb_probe`, `enum4linux_ng`,
+  `snmp_probe`, `redis_probe`, `mysql_probe`.
+* **OSINT:** `theharvester` (emails/hosts/subdomains from public sources).
 * **Advisory:** `advisory_match` (local advisory index).
 
 ### Redundancy model
@@ -51,9 +53,17 @@ primary one reports `failed` or `unavailable` (and only within the active profil
 | Capability | Primary | Fallback(s) |
 | --- | --- | --- |
 | `port_discovery` | `nmap_discovery` | `masscan_scan`, `tcp_scan` |
+| `host_discovery` | `host_alive` | `netdiscover` |
 | `dns_resolve` | `dns_recon` | `dns_nslookup` |
+| `subdomain` | `amass_enum` | `subdomain_enum` |
 | `http_headers` | `http_posture` | `http_curl` |
+| `http_waf_detect` | `wafw00f` | `http_waf_detect` |
+| `web_content` | `gobuster_scan` | `web_content` |
+| `smb_info` | `enum4linux_ng` | `smb_probe` |
 | `tls_info` | `tls_posture` | `tls_openssl` |
+
+External wrappers (`amass_enum`, `gobuster_scan`, `wafw00f`, `enum4linux_ng`) lead their capability
+when installed and silently defer to the built-in fallback when the binary is absent.
 
 ---
 
@@ -71,7 +81,7 @@ primary one reports `failed` or `unavailable` (and only within the active profil
                                  ▼
                  ┌──────────────────────────────────────────────┐
                  │            app.tools (registry)               │
-                 │  28 tools grouped by capability; the executor │
+                 │  36 tools grouped by capability; the executor │
                  │  falls back to an alternative tool of the same │
                  │  capability when one fails or is unavailable   │
                  └───────────────┬──────────────────────────────┘
@@ -99,6 +109,7 @@ model.
 | `masscan_scan` | port_discovery (15) | NETWORK | active | network, full | host |
 | `tcp_scan` | port_discovery (20) | NETWORK | active | all | host |
 | `host_alive` | host_discovery (50) | NETWORK | active | all | host |
+| `netdiscover` | host_discovery (60) | NETWORK | active | network, full | host |
 | `udp_scan` | udp_scan (50) | NETWORK | active | network, full | host |
 | `traceroute` | network_path (50) | NETWORK | active | network, full | host |
 | `service_banner` | service_banner (50) | NETWORK | active | safe, network, full | host + services |
@@ -106,6 +117,7 @@ model.
 | `smtp_probe` | smtp_info (50) | NETWORK | active | network, full | host + services |
 | `ftp_probe` | ftp_info (50) | NETWORK | active | network, full | host + services |
 | `smb_probe` | smb_info (50) | NETWORK | active | network, full | host + services |
+| `enum4linux_ng` | smb_info (40) | NETWORK | active | network, full | host + services |
 | `snmp_probe` | snmp_info (50) | NETWORK | active | network, full | host |
 | `redis_probe` | redis_info (50) | NETWORK | active | network, full | host + services |
 | `mysql_probe` | mysql_info (50) | NETWORK | active | network, full | host + services |
@@ -114,14 +126,20 @@ model.
 | `reverse_dns` | reverse_dns (50) | DNS | read-only | web, network, full | host |
 | `dns_zone_transfer` | zone_transfer (50) | DNS | read-only | network, full | hostname |
 | `subdomain_enum` | subdomain (50) | DNS | read-only | full | hostname |
+| `amass_enum` | subdomain (40) | DNS | passive | network, full | hostname |
+| `dnsrecon` | dns_enum (40) | DNS | active | web, network, full | hostname |
 | `http_posture` | http_headers (10) | WEB | passive | all | base_url |
 | `http_curl` | http_headers (20) | WEB | passive | all | base_url |
 | `http_favicon` | http_favicon (50) | WEB | active | web, full | base_url |
 | `http_waf_detect` | http_waf_detect (50) | WEB | passive | web, full | base_url |
+| `whatweb` | http_fingerprint (40) | WEB | passive | web, full | base_url |
+| `wafw00f` | http_waf_detect (40) | WEB | passive | web, full | base_url |
 | `web_content` | web_content (50) | CONTENT | passive | web, full | base_url |
+| `gobuster_scan` | web_content (40) | CONTENT | active | web, full | base_url |
 | `tls_posture` | tls_info (10) | TLS | active | all | host |
 | `tls_openssl` | tls_info (20) | TLS | active | all | host |
 | `whois_lookup` | whois (50) | OSINT | read-only | web, full | hostname |
+| `theharvester` | osint (50) | OSINT | passive | web, full | hostname |
 | `advisory_match` | advisory (50) | ADVISORY | read-only | all | services |
 
 See [`docs/TOOL_CATALOG.md`](docs/TOOL_CATALOG.md) for parameters and outputs.
@@ -306,7 +324,7 @@ reported.
 | Agentic workflow | `app/agents/graph.py` plans, executes, **adapts**, validates and **projects** the contract result |
 | Design pattern | Supervisor-style planner–executor with authorization router and evidence validator |
 | LangGraph | typed state, nodes, conditional edges (`agents/state.py`, `agents/graph.py`) |
-| Modular tools | registry-driven `app/tools/` with 28 real tools and capability-based redundancy |
+| Modular tools | registry-driven `app/tools/` with 36 real tools and capability-based redundancy |
 | LlamaIndex | `app/knowledge/retrieval.py` local remediation retrieval |
 | Guardrails | `app/safety/` authorization, validation, redaction, honest failure states |
 | Edge cases | missing authorization, malformed/injection input, tool failures, limited responses, no TLS |

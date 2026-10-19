@@ -13,12 +13,15 @@ from app.tools import (  # noqa: F401  (import for registration side effect)
     http_tool,
     network_extra_tool,
     nmap_tool,
+    osint_extra_tool,
     paths_tool,
     service_probes_tool,
+    smb_extra_tool,
     subdomain_tool,
     tcp_scan_tool,
     tls_extra_tool,
     tls_tool,
+    webscan_extra_tool,
     whois_tool,
 )
 from app.tools.registry import (
