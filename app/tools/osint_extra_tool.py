@@ -72,9 +72,12 @@ def _parse_dnsrecon_json(text: str) -> list[dict]:
     for item in raw if isinstance(raw, list) else []:
         if not isinstance(item, dict):
             continue
+        rtype = item.get("type") or item.get("record_type") or "unknown"
+        if rtype in {"ScanInfo", "Unsupported"}:
+            continue
         records.append(
             {
-                "type": item.get("type") or item.get("record_type") or "unknown",
+                "type": rtype,
                 "name": item.get("name") or item.get("target") or "",
                 "address": item.get("address") or item.get("value") or "",
                 "raw": item.get("exchange") or item.get("strings") or "",
@@ -106,14 +109,15 @@ def _parse_netdiscover(stdout: str) -> list[dict]:
 )
 def amass_enum(ctx: ToolContext) -> ToolResult:
     domain = ctx.target.host
-    command = ["amass", "enum", "-passive", "-d", domain, "-timeout", str(ctx.option("amass_timeout", 3))]
+    timeout_min = max(1, int(ctx.option("amass_timeout", 1)))
+    command = ["amass", "enum", "-passive", "-silent", "-d", domain, "-timeout", str(timeout_min)]
     safe_command = f"amass enum -passive -d {domain}"
     if which("amass") is None:
         return unavailable("amass", "Amass is not installed; using the built-in DNS enumerator.", command=safe_command)
 
     started = time.perf_counter()
     try:
-        completed = run_command(command, timeout=settings.nmap_timeout)
+        completed = run_command(command, timeout=min(timeout_min * 60 + 120, 300))
     except Exception as exc:  # timeout / OSError
         return failure("amass", f"Amass did not complete: {type(exc).__name__}", command=safe_command)
 
