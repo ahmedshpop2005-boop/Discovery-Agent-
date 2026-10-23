@@ -1038,7 +1038,21 @@ def build_uncertainties(
             )
 
     if route_coverage is not None:
+        auth_missing = not any(p.authenticated for p in inp.access_profiles)
         for limitation in route_coverage.coverage_limitations:
+            # Those categories are already recorded above with their own
+            # structured evidence; keep them in route_coverage but do not repeat
+            # them as separate report limitations.
+            if limitation.startswith("base URL returned") and response_class in {
+                "auth_required",
+                "forbidden",
+                "rate_limited",
+            }:
+                continue
+            if limitation.startswith("CDN/WAF indicators") and http.get("edge_likely"):
+                continue
+            if "no authenticated access profile" in limitation and auth_missing:
+                continue
             uncertainties.append(
                 Uncertainty(
                     subject=application_id,

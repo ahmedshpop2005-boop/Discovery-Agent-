@@ -93,26 +93,40 @@ Each configured well-known path (`/robots.txt`, `/sitemap.xml`,
 `/.well-known/security.txt`) has its own result:
 
 ```
-status, response_class, content_type, size, retrieved, redirected,
-attempts, retries, outcome, parse_status, parse_error
+url, status, response_class, content_type, size, edge_indicators, diagnostic,
+retrieved, redirected, attempts, retries, outcome, error_category, parse_status
 ```
 
 `outcome` is one of `retrieved`, `missing`, `inaccessible`, `network_error`,
-`http_error`. A parser failure is isolated per resource and does not discard
-other resources. Missing files are never treated as proof of no content.
+`http_error`. `error_category` distinguishes `access_denied` (403),
+`auth_required` (401), `rate_limited` (429), `not_found` (404), `server_error`
+(5xx), transport failures (`timeout`, `dns_failure`, `connection_error`,
+`tls_error`) and `parse_error`. A parser failure is isolated per resource and
+does not discard other resources. HTTP 403 is never labelled missing, and
+missing files are never treated as proof of no content.
 
 ## 6. Gobuster (`gobuster_scan`)
 
 The result records:
 
-* `returncode`, `timed_out`, `completed`, `duration_ms`
+* `returncode`, `timed_out`, `completed`, `process_started`, `duration_ms`
 * `tested`, `attempted`, `untested`
 * `valid_responses`, `rejected_responses`, `server_error_responses`
 * `paths`, `confirmed_paths` (empty when responses are a uniform access-control
-  page)
+  page). Parsing accepts `/admin`, bare `admin` and full-URL output forms.
 * `base_status`, `base_response_class`, `base_edge_indicators`
+* `executable`, `version`, `arguments`, `exclude_length`
+* `random_probe_url`, `random_probe_status`, `random_probe_length`
+* `failure_stage` (`preflight`, `execution`, `completed`), `failure_reason`
 * `uniform_response`, `suspicious_uniform`
 * `zero_result_success`
+
+Gobuster aborts before scanning when a random path returns a uniform deny page
+(exit code 1, "matches the provided options for non existing urls"). The adapter
+performs one bounded random-path probe and passes that page length as
+`--exclude-length`; this lets the scan run without bypassing access controls.
+If Gobuster still refuses, the result is `failed` with
+`failure_reason=wildcard_or_uniform_response` and `attempted=0`.
 
 A completed scan with zero results is `status=ok`, not `partial`. A timeout with
 partial output is `partial`; a timeout/process failure without output is
@@ -190,8 +204,11 @@ contract.
 python -m pytest -q
 ```
 
-`tests/test_web_reliability.py` covers the 14 required cases: unverified
-version, malformed metadata, 200/403/429, timeout-then-success, 404 well-known,
-parser failure, Gobuster zero/failure/timeout, missing auth profile, partial
+`tests/test_web_reliability.py` covers the required cases plus regressions for
+this run: unverified version, malformed metadata, 200/403/429,
+timeout-then-success, 404 well-known, 403-vs-missing classification, parser
+failure, Gobuster zero/failure/timeout, wildcard preflight refusal, bare/URL
+path parsing, `--exclude-length` behaviour behind a uniform deny page, custom
+well-known paths, missing auth profile, limitation de-duplication, partial
 result preservation, limited route coverage after access-control, and final
 report serialisation. All tests are hermetic (mocked transport, local fixtures).

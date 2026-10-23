@@ -26,6 +26,55 @@ _STATUS_MAP = {
 }
 
 
+def _dedupe_strings(values: list[Any]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        text = str(value).strip()
+        key = " ".join(text.split()).lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        result.append(text)
+    return result
+
+
+def _dedupe_uncertainties(items: list[Any]) -> list[dict[str, Any]]:
+    """Merge repeated limitations while keeping their structured evidence refs."""
+    merged: dict[tuple[str, str], dict[str, Any]] = {}
+    for item in items:
+        if not isinstance(item, dict):
+            text = str(item).strip()
+            if not text:
+                continue
+            key = ("", " ".join(text.split()).lower())
+            record = {"subject": "", "detail": text, "evidence_refs": []}
+        else:
+            record = dict(item)
+            detail = str(record.get("detail") or "").strip()
+            if not detail:
+                continue
+            key = (str(record.get("subject") or ""), " ".join(detail.split()).lower())
+        existing = merged.get(key)
+        if existing is None:
+            merged[key] = record
+            continue
+        refs = list(existing.get("evidence_refs") or [])
+        for ref in record.get("evidence_refs") or []:
+            if ref not in refs:
+                refs.append(ref)
+        existing["evidence_refs"] = refs
+    return list(merged.values())
+
+
+def _dedupe_coverage(coverage: dict[str, Any]) -> dict[str, Any]:
+    result = dict(coverage)
+    for key in ("coverage_limitations", "checks_completed", "checks_unverified", "notes"):
+        if key in result and isinstance(result[key], list):
+            result[key] = _dedupe_strings(result[key])
+    return result
+
+
 def build_json_report(result: dict[str, Any]) -> dict[str, Any]:
     """Build a JSON-serialisable report from a completed assessment state."""
     generated_at = datetime.now(timezone.utc)
@@ -40,9 +89,11 @@ def build_json_report(result: dict[str, Any]) -> dict[str, Any]:
     endpoints = web.get("endpoints") or []
     observations = web.get("web_observations") or []
     evidence = web.get("evidence") or []
-    route_coverage = web.get("route_coverage") or {}
-    authentication_coverage = web.get("authentication_coverage") or {}
-    uncertainties = list(inventory.get("uncertainties") or []) + list(web.get("uncertainties") or [])
+    route_coverage = _dedupe_coverage(web.get("route_coverage") or {})
+    authentication_coverage = _dedupe_coverage(web.get("authentication_coverage") or {})
+    uncertainties = _dedupe_uncertainties(
+        list(inventory.get("uncertainties") or []) + list(web.get("uncertainties") or [])
+    )
     technologies = _technologies(applications)
     tool_results = _tool_results(result)
     overall_status = _overall_status(result, web, tool_results)
@@ -196,7 +247,7 @@ def _tool_limitations(payload: dict[str, Any]) -> list[str]:
         limitations.append("zero results do not prove absence of content")
     if payload.get("status") == "partial":
         limitations.append(payload.get("summary") or "partial result")
-    return limitations
+    return _dedupe_strings(limitations)
 
 
 def _overall_status(

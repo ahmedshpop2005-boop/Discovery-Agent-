@@ -238,8 +238,13 @@ JSON report. No credential attacks are performed; when the binary is absent the 
 * **Wordlist:** `data/wordlists/common.txt` (bounded; override with option `content_words`)
 * **Output:** `data.paths[]`, `confirmed_paths[]`, `tested`, `attempted`, `untested`,
   `valid_responses`, `rejected_responses`, `server_error_responses`, `returncode`, `timed_out`,
-  `completed`, `duration_ms`, `base_status`, `base_response_class`, `suspicious_uniform`,
-  `zero_result_success`, `stdout_tail`, `stderr_tail`
+  `completed`, `process_started`, `duration_ms`, `executable`, `version`, `arguments`,
+  `failure_stage` (`preflight`/`execution`/`completed`), `failure_reason`, `exclude_length`,
+  `random_probe_url`, `random_probe_status`, `random_probe_length`, `base_status`,
+  `base_response_class`, `suspicious_uniform`, `zero_result_success`, `stdout_tail`, `stderr_tail`
+* **Wildcard guard:** Gobuster aborts when a random path returns the deny page. The adapter
+  probes one random path and passes its body length as `--exclude-length`, so the scan can run
+  without bypassing access controls; excluded responses are never reported as routes.
 * **Degrades:** `unavailable` when Gobuster is absent. A completed zero-result scan is `ok`;
   a timeout with output is `partial` and preserves output. Uniform 401/403/429 responses are
   inaccessible, not discovered routes. **Note:** bounded discovery, not brute force.
@@ -247,11 +252,12 @@ JSON report. No credential attacks are performed; when the binary is absent the 
 ### `web_content` — Well-known content discovery *(fallback)*
 * **Profiles:** `web`, `full`
 * **Fetches:** `/robots.txt`, `/sitemap.xml`, `/.well-known/security.txt`
-* **Output:** `data.found`, `data.resources` (per path: `status`, `response_class`, `outcome`,
-  `retrieved`, `attempts`, `retries`, `parse_status`, `parse_error`), `data.missing`,
-  `data.inaccessible`, `data.parse_errors`, `data.errors`, `data.tested`, `data.retrieved`
-* **Note:** a missing resource is not proof of no content; missing, inaccessible and parse
-  failures are reported separately.
+* **Output:** `data.found`, `data.resources` (per path: `url`, `status`, `response_class`,
+  `outcome`, `error_category`, `attempts`, `retries`, `diagnostic`, `retrieved`, `parse_status`,
+  `parse_error`), `data.missing`, `data.inaccessible`, `data.parse_errors`, `data.errors`,
+  `data.error_categories`, `data.tested`, `data.retrieved`
+* **Note:** HTTP 403 is `access_denied`, never `missing`; DNS, connection, timeout and parser
+  failures carry distinct categories. A missing resource is not proof of no content.
 
 ---
 

@@ -46,6 +46,7 @@ class HttpResult:
     headers: dict[str, str] = field(default_factory=dict)
     set_cookie: list[str] = field(default_factory=list)
     body: bytes = b""
+    body_length: int = 0
     response_class: ResponseClass = ResponseClass.UNKNOWN
     error: str | None = None
     attempts: int = 0
@@ -225,6 +226,7 @@ def request_with_retries(
             result.set_cookie = [redact(value) for value in response.headers.get_list("set-cookie")]
             result.content_type = result.headers.get("content-type")
             result.body = response.content[:_MAX_BODY]
+            result.body_length = len(response.content)
             result.redirect_chain = [str(item.url) for item in response.history]
             result.edge_indicators = detect_edge(result.headers, result.body)
 

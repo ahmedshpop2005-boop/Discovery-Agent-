@@ -13,10 +13,12 @@ from __future__ import annotations
 
 import json
 import re
+import secrets
 import subprocess
 import tempfile
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from app.config import settings
 from app.net.http import request_with_retries
@@ -32,8 +34,12 @@ from app.tools.base import (
 )
 from app.tools.registry import tool
 
-_GOBUSTER_LINE = re.compile(r"^(?P<path>/\S*)\s+\(Status:\s*(?P<status>\d+)\)(?:\s*\[Size:\s*(?P<size>\d+)\])?")
+_GOBUSTER_LINE = re.compile(
+    r"^(?P<path>\S+)\s+\(Status:\s*(?P<status>\d+)\)(?:\s*\[Size:\s*(?P<size>\d+)\])?"
+)
 _GOBUSTER_PROGRESS = re.compile(r"(?i)progress:\s*(?P<done>\d+)\s*/\s*(?P<total>\d+)")
+_GOBUSTER_VERSION = re.compile(r"(?i)version\s+(\d+\.\d+(?:\.\d+)?)")
+_GOBUSTER_WILDCARD_HINT = "matches the provided options for non existing urls"
 _WAFW00F_BEHIND = re.compile(r"is behind\s+(?P<name>.+?)(?:\s*\(|$)", re.IGNORECASE)
 
 _FALLBACK_WORDS = ["admin", "login", "api", "backup", "config", "uploads", "robots.txt", "sitemap.xml"]
@@ -85,6 +91,16 @@ def _parse_whatweb_json(text: str) -> dict:
     return {"plugins": plugins, "targets": targets, "technologies": sorted(plugins)}
 
 
+def _normalise_gobuster_path(raw: str) -> str:
+    """Accept ``/admin``, ``admin`` and ``https://host/admin`` output forms."""
+    value = raw.strip()
+    if "://" in value:
+        value = urlsplit(value).path or "/"
+    if not value.startswith("/"):
+        value = "/" + value
+    return value
+
+
 def _parse_gobuster(stdout: str) -> list[dict]:
     found: list[dict] = []
     for line in stdout.splitlines():
@@ -92,12 +108,21 @@ def _parse_gobuster(stdout: str) -> list[dict]:
         if match:
             found.append(
                 {
-                    "path": match.group("path"),
+                    "path": _normalise_gobuster_path(match.group("path")),
                     "status": int(match.group("status")),
                     "size": int(match.group("size")) if match.group("size") else None,
                 }
             )
     return found
+
+
+def _gobuster_version(executable: str) -> str | None:
+    try:
+        completed = run_command([executable, "--version"], timeout=5)
+    except Exception:
+        return None
+    match = _GOBUSTER_VERSION.search(f"{completed.stdout}\n{completed.stderr}")
+    return match.group(1) if match else None
 
 
 def _gobuster_progress(stdout: str) -> tuple[int, int | None]:
@@ -201,8 +226,10 @@ def gobuster_scan(ctx: ToolContext) -> ToolResult:
         return failure("gobuster", "Target must be an http(s) base URL.", command=safe_command)
     if not words:
         return failure("gobuster", "No candidate words were supplied.", command=safe_command)
-    if which("gobuster") is None:
+    executable = which("gobuster")
+    if executable is None:
         return unavailable("gobuster", "Gobuster is not installed.", command=safe_command)
+    version = _gobuster_version(executable)
 
     # A base probe distinguishes "the site returns a uniform access-control
     # page" from real path discovery without making extra aggressive requests.
@@ -212,12 +239,33 @@ def gobuster_scan(ctx: ToolContext) -> ToolResult:
     edge_indicators = base.edge_indicators
     suspicious_base = base_status in {401, 403, 429} or base.edge_likely or base_status is None
 
+    # Gobuster aborts before scanning when a random path returns the same
+    # deny/error page as the target (its wildcard guard). A single bounded
+    # probe captures that page length so it can be excluded without bypassing
+    # access controls; 403 responses are still recorded as inaccessible.
+    probe_url = f"{url}/{secrets.token_hex(8)}"
+    probe = request_with_retries(probe_url, method="GET", retries=0)
+    uniform_statuses = {401, 403, 429, 500, 502, 503, 504}
+    exclude_length = (
+        probe.body_length
+        if probe.status_code in uniform_statuses and probe.body_length > 0
+        else None
+    )
+
     wordlist = _temp_file(".txt")
     wordlist.write_text("\n".join(str(word) for word in words), encoding="utf-8")
     command = [
-        "gobuster", "dir", "-u", url, "-w", str(wordlist),
+        executable, "dir", "-u", url, "-w", str(wordlist),
         "-q", "-t", "20", "--timeout", "5s", "--no-progress",
     ]
+    if exclude_length is not None:
+        command.extend(["--exclude-length", str(exclude_length)])
+    safe_arguments = [
+        Path(executable).name, "dir", "-u", url, "-w", "common.txt",
+        "-q", "-t", "20", "--timeout", "5s", "--no-progress",
+    ]
+    if exclude_length is not None:
+        safe_arguments.extend(["--exclude-length", str(exclude_length)])
 
     started = time.perf_counter()
     completed: subprocess.CompletedProcess[str] | None = None
@@ -251,9 +299,42 @@ def gobuster_scan(ctx: ToolContext) -> ToolResult:
     rejected = [item for item in found if int(item["status"]) in {401, 403, 429}]
     server_errors = [item for item in found if int(item["status"]) >= 500]
 
+    returncode = completed.returncode if completed else None
+    failure_reason: str | None = None
+    failure_stage: str | None = None
+    if failure_error and completed is None:
+        failure_stage = (
+            "preflight"
+            if failure_error.startswith(("FileNotFoundError", "PermissionError"))
+            else "execution"
+        )
+        failure_reason = "process_not_started"
+    elif timed_out:
+        failure_stage = "execution"
+        failure_reason = "timeout"
+    elif returncode not in (0, None):
+        failure_stage = "execution"
+        combined = f"{stdout}\n{stderr}".lower()
+        if _GOBUSTER_WILDCARD_HINT in combined or "wildcard" in combined:
+            failure_reason = "wildcard_or_uniform_response"
+            failure_stage = "preflight"
+        elif any(token in combined for token in ("no such host", "connection refused", "i/o timeout")):
+            failure_reason = "network_error"
+        elif "wordlist" in combined:
+            failure_reason = "wordlist_error"
+        elif "error" in combined or raw_stderr:
+            failure_reason = "process_error"
+        else:
+            failure_reason = "nonzero_exit"
+    elif returncode == 0:
+        failure_stage = "completed"
+
     if timed_out:
         attempted = attempted_progress
         untested = max(0, len(words) - attempted)
+    elif failure_reason == "wildcard_or_uniform_response" and not found:
+        attempted = 0
+        untested = len(words)
     else:
         attempted = len(words) if completed is not None else attempted_progress
         untested = max(0, (declared_total or len(words)) - attempted)
@@ -264,7 +345,6 @@ def gobuster_scan(ctx: ToolContext) -> ToolResult:
     suspicious_uniform = uniform and suspicious_base
     confirmed = [] if suspicious_uniform else valid
 
-    returncode = completed.returncode if completed else None
     if failure_error and completed is None:
         status = "failed"
         summary = f"Gobuster did not run: {failure_error}"
@@ -274,9 +354,20 @@ def gobuster_scan(ctx: ToolContext) -> ToolResult:
             f"Gobuster timed out after {attempted}/{len(words)} candidate(s); "
             f"{len(found)} response(s) were preserved."
         )
+    elif failure_reason == "wildcard_or_uniform_response" and not found:
+        status = "failed"
+        summary = (
+            "Gobuster did not scan: a random path returned HTTP "
+            f"{probe.status_code} with a uniform "
+            f"{exclude_length or probe.body_length}-byte response (wildcard/access-control page). "
+            "No route discovery result is claimed."
+        )
     elif returncode not in (0, None):
         status = "partial" if found else "failed"
-        summary = f"Gobuster exited with code {returncode}; {len(found)} response(s) preserved."
+        summary = (
+            f"Gobuster exited with code {returncode} ({failure_reason or 'unknown'}); "
+            f"{len(found)} response(s) preserved."
+        )
     else:
         status = "ok"
         if found:
@@ -295,8 +386,20 @@ def gobuster_scan(ctx: ToolContext) -> ToolResult:
         "server_error_responses": len(server_errors),
         "returncode": returncode,
         "timed_out": timed_out,
-        "completed": completed is not None and not timed_out,
+        "completed": returncode == 0,
+        "process_started": completed is not None,
         "zero_result_success": status == "ok" and not found,
+        "failure_stage": failure_stage,
+        "failure_reason": failure_reason,
+        "target_url": url,
+        "executable": executable,
+        "version": version,
+        "arguments": safe_arguments,
+        "exclude_length": exclude_length,
+        "random_probe_url": probe_url,
+        "random_probe_status": probe.status_code,
+        "random_probe_response_class": probe.response_class.value,
+        "random_probe_length": probe.body_length,
         "duration_ms": duration,
         "stdout_tail": stdout,
         "stderr_tail": stderr,
@@ -319,7 +422,17 @@ def gobuster_scan(ctx: ToolContext) -> ToolResult:
                 url=url,
                 status=base_status,
                 response_class=base_class,
-            )
+            ),
+            evidence(
+                "gobuster",
+                f"random-path probe: HTTP {probe.status_code} ({probe.response_class.value}), "
+                f"{probe.body_length} bytes"
+                + (f"; excluded length {exclude_length}" if exclude_length else ""),
+                url=probe_url,
+                status=probe.status_code,
+                response_class=probe.response_class.value,
+                outcome="wildcard/access-control page" if exclude_length else "probe",
+            ),
         ]
         + [
             evidence(
@@ -331,14 +444,23 @@ def gobuster_scan(ctx: ToolContext) -> ToolResult:
             )
             for item in found[:12]
         ],
-        command=safe_command,
+        command=" ".join(safe_arguments),
         note=(
             "Directory discovery only; no exhaustive brute force. "
             "Zero results do not mean no paths exist. Uniform 401/403/429 or CDN "
-            "responses are recorded as inaccessible, not as discovered routes."
+            "responses are recorded as inaccessible, not as discovered routes. "
+            "A uniform deny-page length is excluded so the scan can run without "
+            "bypassing access controls; excluded responses are not reported as routes."
         ),
         duration_ms=duration,
-        error=failure_error,
+        error=(
+            failure_error
+            or (
+                f"exit {returncode}: {failure_reason}"
+                if returncode not in (0, None)
+                else None
+            )
+        ),
     )
 
 

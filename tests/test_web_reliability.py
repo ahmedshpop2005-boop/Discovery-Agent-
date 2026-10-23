@@ -33,8 +33,8 @@ from app.tools import paths_tool, webscan_extra_tool
 from app.tools.base import ToolContext
 
 
-def _ctx(url: str = "http://app.example.test") -> ToolContext:
-    return ToolContext(target=normalize_target(url), scan_id="test", options={})
+def _ctx(url: str = "http://app.example.test", options: dict | None = None) -> ToolContext:
+    return ToolContext(target=normalize_target(url), scan_id="test", options=options or {})
 
 
 # 1. Valid fingerprint with an unverified version ---------------------------
@@ -433,3 +433,170 @@ def test_final_report_is_serialisable(local_http_server):
         "limited",
         "unknown",
     }
+def _forbidden(url: str, body: bytes = b"denied", **_kwargs) -> HttpResult:
+    return HttpResult(
+        url=url,
+        status_code=403,
+        response_class=ResponseClass.FORBIDDEN,
+        body=body,
+        body_length=len(body),
+        attempts=1,
+    )
+
+
+def test_gobuster_parses_bare_and_full_url_paths():
+    stdout = "\n".join(
+        [
+            "admin                (Status: 200) [Size: 35]",
+            "https://app.example.test/api (Status: 301) [Size: 0]",
+            "/private (Status: 403)",
+            "not a result line",
+        ]
+    )
+    parsed = webscan_extra_tool._parse_gobuster(stdout)
+    assert [item["path"] for item in parsed] == ["/admin", "/api", "/private"]
+    assert [item["status"] for item in parsed] == [200, 301, 403]
+
+
+def test_gobuster_wildcard_preflight_failure_is_reported(monkeypatch):
+    monkeypatch.setattr(webscan_extra_tool, "which", lambda _name: "gobuster")
+    monkeypatch.setattr(webscan_extra_tool, "request_with_retries", _forbidden)
+    message = (
+        "the server returns a status code that matches the provided options for non "
+        "existing urls. http://app.example.test/abc => 403 (Length: 48). "
+        "Please exclude the response length or the status code or set the wildcard option."
+    )
+    calls = []
+
+    def fake_run(args, **_kwargs):
+        calls.append(list(args))
+        if "--version" in args:
+            return subprocess.CompletedProcess(args, 0, "gobuster version 3.8.2\n", "")
+        return subprocess.CompletedProcess(args, 1, "", message)
+
+    monkeypatch.setattr(webscan_extra_tool, "run_command", fake_run)
+    result = webscan_extra_tool.gobuster_scan(_ctx())
+
+    assert result.status == "failed"
+    assert result.data["returncode"] == 1
+    assert result.data["paths"] == []
+    assert result.data["zero_result_success"] is False
+    assert result.data["failure_stage"] == "preflight"
+    assert result.data["failure_reason"] == "wildcard_or_uniform_response"
+    assert result.data["attempted"] == 0
+    assert result.data["untested"] > 0
+    assert result.data["executable"] == "gobuster"
+    assert result.data["version"] == "3.8.2"
+    assert result.data["exclude_length"] == 6
+    assert result.data["stderr_tail"]
+    assert any("--exclude-length" in command for command in calls)
+
+
+def test_gobuster_discovers_paths_behind_uniform_deny_page(monkeypatch):
+    monkeypatch.setattr(webscan_extra_tool, "which", lambda _name: "gobuster")
+    monkeypatch.setattr(webscan_extra_tool, "request_with_retries", _forbidden)
+    captured = {}
+
+    def fake_run(args, **_kwargs):
+        if "--version" in args:
+            return subprocess.CompletedProcess(args, 0, "gobuster version 3.8.2", "")
+        captured["args"] = list(args)
+        return subprocess.CompletedProcess(
+            args, 0, "admin (Status: 200) [Size: 35]\n", ""
+        )
+
+    monkeypatch.setattr(webscan_extra_tool, "run_command", fake_run)
+    result = webscan_extra_tool.gobuster_scan(_ctx())
+
+    assert result.status == "ok"
+    assert [item["path"] for item in result.data["paths"]] == ["/admin"]
+    assert [item["path"] for item in result.data["confirmed_paths"]] == ["/admin"]
+    assert result.data["exclude_length"] == 6
+    assert captured["args"][captured["args"].index("--exclude-length") + 1] == "6"
+    assert result.data["zero_result_success"] is False
+
+
+def test_web_content_403_is_access_denied_not_missing(monkeypatch):
+    def fake_request(url: str, **_kwargs) -> HttpResult:
+        result = _forbidden(url)
+        result.headers = {"cf-ray": "8a1b2c3d4e5f-SIN", "server": "cloudflare"}
+        result.edge_indicators = ["cloudflare"]
+        return result
+
+    monkeypatch.setattr(paths_tool, "request_with_retries", fake_request)
+    result = paths_tool.web_content(_ctx())
+
+    assert result.status == "partial"
+    assert result.data["tested"] == len(paths_tool.WELL_KNOWN)
+    assert result.data["retrieved"] == 0
+    assert result.data["missing"] == []
+    assert set(result.data["inaccessible"]) == set(paths_tool.WELL_KNOWN)
+    assert result.data["error_categories"] == {"access_denied": 3}
+    entry = result.data["resources"]["/robots.txt"]
+    assert entry["url"] == "http://app.example.test/robots.txt"
+    assert entry["status"] == 403
+    assert entry["outcome"] == "inaccessible"
+    assert entry["error_category"] == "access_denied"
+    assert entry["attempts"] == 1
+    assert entry["diagnostic"] == "denied"
+    assert entry["edge_indicators"] == ["cloudflare"]
+
+
+def test_web_content_uses_configured_paths(monkeypatch):
+    monkeypatch.setattr(
+        paths_tool,
+        "request_with_retries",
+        lambda url, **_kwargs: HttpResult(
+            url=url, status_code=404, response_class=ResponseClass.NOT_FOUND
+        ),
+    )
+    result = paths_tool.web_content(_ctx(options={"well_known_paths": ["/a.txt", "/b.txt"]}))
+
+    assert result.data["tested"] == 2
+    assert set(result.data["missing"]) == {"/a.txt", "/b.txt"}
+    assert result.status == "partial"
+
+
+def test_json_report_dedupes_limitations_and_merges_evidence():
+    duplicate = "Gobuster did not complete cleanly: uniform access-control page"
+    payload = build_json_report(
+        {
+            "status": "completed",
+            "executed": ["gobuster_scan"],
+            "tool_plan": [],
+            "results": {
+                "gobuster_scan": {
+                    "status": "partial",
+                    "summary": "partial",
+                    "data": {"suspicious_uniform": True, "response_class": "forbidden"},
+                }
+            },
+            "inventory": {
+                "uncertainties": [
+                    {"subject": "app", "detail": duplicate, "evidence_refs": ["prov:a"]}
+                ]
+            },
+            "web_inventory": {
+                "uncertainties": [
+                    {"subject": "app", "detail": duplicate, "evidence_refs": ["prov:b"]}
+                ],
+                "route_coverage": {
+                    "coverage_status": "limited",
+                    "coverage_limitations": ["auth unavailable", "auth unavailable"],
+                },
+                "authentication_coverage": {
+                    "status": "not_assessed",
+                    "checks_unverified": ["authenticated routes", "authenticated routes"],
+                },
+            },
+        }
+    )
+
+    assert len(payload["uncertainties"]) == 1
+    assert set(payload["uncertainties"][0]["evidence_refs"]) == {"prov:a", "prov:b"}
+    assert payload["route_coverage"]["coverage_limitations"] == ["auth unavailable"]
+    assert payload["authentication_coverage"]["checks_unverified"] == ["authenticated routes"]
+    assert len(payload["tool_results"][0]["limitations"]) == len(
+        set(payload["tool_results"][0]["limitations"])
+    )
+
