@@ -16,6 +16,7 @@ Design rules honoured here:
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -51,6 +52,23 @@ _OBSERVATION_TOOLS = {
 }
 
 _ADDRESS_KEYS = {"A", "AAAA"}
+
+_BANNER_PATTERNS = (
+    re.compile(r"SSH-\d+\.\d+-(?P<product>[A-Za-z]+)[-_](?P<version>[\w.\-]+)"),
+    re.compile(r"(?P<product>[A-Za-z][A-Za-z0-9._\-]*)/(?P<version>\d[\w.\-]*)"),
+    re.compile(r"(?P<product>[A-Za-z][A-Za-z0-9._\-]*)[ /](?P<version>\d+\.\d+(?:[\w.\-]*))"),
+)
+
+
+def _parse_banner(banner: str | None) -> tuple[str | None, str | None]:
+    """Best-effort product/version from an advertised service banner."""
+    if not banner:
+        return None, None
+    for pattern in _BANNER_PATTERNS:
+        match = pattern.search(banner)
+        if match:
+            return match.group("product"), match.group("version")
+    return None, None
 
 
 def _prov_ref(tool: str) -> str:
@@ -122,9 +140,26 @@ def build_assets(state: dict, inp: DiscoveryInput) -> list[Asset]:
         if value not in seen:
             seen.append(value)
     os_name = None
-    guess = state.get("results", {}).get("nmap_discovery", {}).get("data", {})
+    results = state.get("results", {})
+    guess = results.get("nmap_discovery", {}).get("data", {})
     if guess.get("os"):
         os_name = str(guess["os"])
+
+    evidence_snippets: list[str] = []
+    host_alive = results.get("host_alive", {}).get("data", {}) or {}
+    if host_alive:
+        evidence_snippets.append(
+            f"host_alive: icmp={host_alive.get('icmp')} tcp={host_alive.get('tcp')}"
+        )
+    if dns.get("data", {}).get("records"):
+        evidence_snippets.append(
+            "dns_recon: " + ", ".join(sorted(str(key) for key in dns["data"]["records"]))
+        )
+    if guess:
+        evidence_snippets.append(f"nmap_discovery: {guess.get('summary') or 'host observed'}")
+    if reverse.get("data", {}).get("names"):
+        evidence_snippets.append("reverse_dns: " + ", ".join(str(n) for n in reverse["data"]["names"][:5]))
+
     return [
         Asset(
             asset_id=_asset_id(host),
@@ -132,6 +167,7 @@ def build_assets(state: dict, inp: DiscoveryInput) -> list[Asset]:
             addresses=seen,
             os=os_name,
             os_basis=ObservationBasis.INFERRED if os_name else None,
+            evidence=evidence_snippets,
             evidence_refs=[],
         )
     ]
@@ -155,6 +191,8 @@ def build_services(state: dict, inp: DiscoveryInput) -> tuple[list[ServiceRecord
         name = str(entry.get("service") or "unknown").lower()
         by_key.setdefault(key, set()).add(name)
 
+    banners = state.get("results", {}).get("service_banner", {}).get("data", {}).get("banners", {}) or {}
+
     for entry in state.get("services", []):
         port = int(entry.get("port", 0))
         protocol = entry.get("protocol", "tcp")
@@ -162,6 +200,13 @@ def build_services(state: dict, inp: DiscoveryInput) -> tuple[list[ServiceRecord
         product = entry.get("product") or None
         version = entry.get("version") or None
         source = entry.get("source") or "unknown"
+        if not product or not version:
+            banner = banners.get(str(port)) or banners.get(key)
+            banner_product, banner_version = _parse_banner(banner)
+            product = product or banner_product
+            version = version or banner_version
+            if (banner_product or banner_version) and source == "unknown":
+                source = "service_banner"
         local_uncertainty: list[str] = []
         if version:
             note = f"version '{version}' is a banner observation, not authenticated package evidence"
@@ -176,6 +221,14 @@ def build_services(state: dict, inp: DiscoveryInput) -> tuple[list[ServiceRecord
             uncertainties.append(
                 Uncertainty(subject=f"svc:{host}:{key}", detail=note, evidence_refs=[_prov_ref(source)])
             )
+        service_evidence = [f"{source}: TCP/{port} open"]
+        banner = banners.get(str(port)) or banners.get(key)
+        if banner:
+            service_evidence.append(f"banner: {str(banner)[:200]}")
+        if product or version:
+            service_evidence.append(
+                f"{source}: product={product or 'unknown'} version={version or 'unknown'} (unverified)"
+            )
         services.append(
             ServiceRecord(
                 service_id=f"svc:{host}:{key}",
@@ -189,6 +242,7 @@ def build_services(state: dict, inp: DiscoveryInput) -> tuple[list[ServiceRecord
                 authenticated=False,
                 reachability=Reachability.REACHABLE,
                 uncertainty=local_uncertainty,
+                evidence=service_evidence,
                 evidence_refs=[_prov_ref(source)],
             )
         )

@@ -59,3 +59,68 @@ class ObservationBasis(str, Enum):
 class RelationshipKind(str, Enum):
     OBSERVED = "observed"
     INFERRED = "inferred"
+
+
+class TechnologyObservationType(str, Enum):
+    """How a technology/version was obtained.
+
+    Only ``VERSION_VERIFIED`` (independent validation) and
+    ``PACKAGE_VERIFIED`` (authenticated package inventory) may ever be
+    presented as verified; everything derived from HTML, JavaScript, banners
+    or HTTP headers stays a claim/fingerprint.
+    """
+
+    FINGERPRINT_OBSERVED = "fingerprint_observed"
+    BANNER_OBSERVED = "banner_observed"
+    VERSION_CLAIMED = "version_claimed"
+    VERSION_VERIFIED = "version_verified"
+    PACKAGE_VERIFIED = "package_verified"
+    UNKNOWN = "unknown"
+
+
+class VerificationStatus(str, Enum):
+    UNVERIFIED = "unverified"
+    VERIFIED = "verified"
+    PACKAGE_VERIFIED = "package_verified"
+    REJECTED = "rejected"
+    UNKNOWN = "unknown"
+
+
+class ConfidenceLevel(str, Enum):
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+    UNKNOWN = "unknown"
+
+
+class ResponseClass(str, Enum):
+    """Deterministic classification of an HTTP exchange."""
+
+    SUCCESS = "success"
+    REDIRECT = "redirect"
+    AUTH_REQUIRED = "auth_required"
+    FORBIDDEN = "forbidden"
+    NOT_FOUND = "not_found"
+    RATE_LIMITED = "rate_limited"
+    CLIENT_ERROR = "client_error"
+    SERVER_ERROR = "server_error"
+    TIMEOUT = "timeout"
+    DNS_FAILURE = "dns_failure"
+    TLS_ERROR = "tls_error"
+    CONNECTION_ERROR = "connection_error"
+    UNKNOWN = "unknown"
+
+
+class CoverageStatus(str, Enum):
+    FULL = "full"
+    PARTIAL = "partial"
+    LIMITED = "limited"
+    UNKNOWN = "unknown"
+
+
+class OverallStatus(str, Enum):
+    SUCCESS = "success"
+    PARTIAL = "partial"
+    BLOCKED = "blocked"
+    INCONCLUSIVE = "inconclusive"
+    FAILED = "failed"

@@ -105,10 +105,10 @@ model.
 
 | Tool | Capability (prio) | Category | Effect | Profiles | Requires |
 | --- | --- | --- | --- | --- | --- |
-| `nmap_discovery` | port_discovery (10) | NETWORK | passive | all | host |
+| `nmap_discovery` | port_discovery (10) | NETWORK | passive | safe, network, full | host |
 | `masscan_scan` | port_discovery (15) | NETWORK | active | network, full | host |
-| `tcp_scan` | port_discovery (20) | NETWORK | active | all | host |
-| `host_alive` | host_discovery (50) | NETWORK | active | all | host |
+| `tcp_scan` | port_discovery (20) | NETWORK | active | safe, network, full | host |
+| `host_alive` | host_discovery (50) | NETWORK | active | safe, network, full | host |
 | `netdiscover` | host_discovery (60) | NETWORK | active | network, full | host |
 | `udp_scan` | udp_scan (50) | NETWORK | active | network, full | host |
 | `traceroute` | network_path (50) | NETWORK | active | network, full | host |
@@ -125,11 +125,11 @@ model.
 | `dns_nslookup` | dns_resolve (20) | DNS | read-only | all | hostname |
 | `reverse_dns` | reverse_dns (50) | DNS | read-only | web, network, full | host |
 | `dns_zone_transfer` | zone_transfer (50) | DNS | read-only | network, full | hostname |
-| `subdomain_enum` | subdomain (50) | DNS | read-only | full | hostname |
+| `subdomain_enum` | subdomain (50) | DNS | read-only | network, full | hostname |
 | `amass_enum` | subdomain (40) | DNS | passive | network, full | hostname |
 | `dnsrecon` | dns_enum (40) | DNS | active | web, network, full | hostname |
-| `http_posture` | http_headers (10) | WEB | passive | all | base_url |
-| `http_curl` | http_headers (20) | WEB | passive | all | base_url |
+| `http_posture` | http_headers (10) | WEB | passive | safe, web, full | base_url |
+| `http_curl` | http_headers (20) | WEB | passive | safe, web, full | base_url |
 | `http_favicon` | http_favicon (50) | WEB | active | web, full | base_url |
 | `http_waf_detect` | http_waf_detect (50) | WEB | passive | web, full | base_url |
 | `whatweb` | http_fingerprint (40) | WEB | passive | web, full | base_url |
@@ -138,7 +138,7 @@ model.
 | `gobuster_scan` | web_content (40) | CONTENT | active | web, full | base_url |
 | `tls_posture` | tls_info (10) | TLS | active | all | host |
 | `tls_openssl` | tls_info (20) | TLS | active | all | host |
-| `whois_lookup` | whois (50) | OSINT | read-only | web, full | hostname |
+| `whois_lookup` | whois (50) | OSINT | read-only | web, network, full | hostname |
 | `theharvester` | osint (50) | OSINT | passive | web, full | hostname |
 | `advisory_match` | advisory (50) | ADVISORY | read-only | all | services |
 
@@ -154,16 +154,21 @@ in the SentinelX contracts. Models live in [`app/contracts/`](app/contracts) (st
 
 * **Input:** common input (`workspace_id/run_id/task_id`, `environment_kind`, `scope_ref`,
   `available_capabilities`, `remaining_budget`, …) + Discovery input (`target_seeds`,
-  `discovery_limits`, `access_profiles`, `network_context`, `discovery_questions`).
+  `discovery_limits`, `access_profiles`, `network_context`, `web_context`,
+  `discovery_questions`).
 * **Output:** common output (`status`, `artifact_refs`, `proposed_actions`, `assumptions`,
   `coverage_gaps`, `required_gate`, `concise_rationale`, `next_objective`) + `AssetInventory`
   (`assets`, `services`, `host_observations`, `relationship_proposals`,
+  `observation_provenance`, `uncertainties`, `unassessed_targets`) + the Web extension
+  `WebAssetInventory` (`applications`, `endpoints`, `web_observations`, `evidence`,
+  `route_coverage`, `authentication_coverage`, `relationship_proposals`,
   `observation_provenance`, `uncertainties`, `unassessed_targets`).
 * **Status:** `DONE · MORE_WORK · BLOCKED · NEEDS_REVIEW · FAILED`; missing input ⇒ `BLOCKED`
   with gate `INPUT`; no consent ⇒ `BLOCKED` with gate `AUTHORIZATION`.
-* **Honesty:** a version string is a `banner` observation (`authenticated=false`) with an
-  `uncertainty`; every observation carries provenance (source tool, version, runner, time);
-  an unreachable host is never reported as `DONE`.
+* **Honesty:** a version string is a `banner`/`version_claimed` observation (never
+  `package_verified` without authenticated package evidence) with an `uncertainty`; every
+  observation carries provenance (source tool, version, runner, time); an unreachable host
+  is never reported as `DONE`.
 
 ```bash
 python scripts/export_contracts.py     # regenerate schemas + example JSON
@@ -171,12 +176,87 @@ python scripts/export_contracts.py     # regenerate schemas + example JSON
 
 Full field tables, rejection rules and cases: [`docs/contracts/CONTRACT.md`](docs/contracts/CONTRACT.md).
 
-### Profiles
+### Scan surfaces (profiles)
 
-* **safe** (default) — discovery + DNS + HTTP + TLS posture with polite limits.
-* **web** — adds content discovery, favicon/WAF fingerprint and WHOIS.
-* **network** — adds broader scanning, service probes and zone-transfer attempts.
-* **full** — every applicable tool, including subdomain enumeration.
+The same input is assessed as two separate surfaces; pick one or both.
+
+* **network** (27 tools) — host/port/service discovery, version/banner detection,
+  DNS/zone-transfer, subdomain enumeration, service probes (SSH, SMTP, FTP, SMB,
+  SNMP, Redis, MySQL), TLS and routing. **No HTTP/Web tools run.**
+* **web** (17 tools) — HTTP posture/headers/cookies, TLS, technology+version
+  fingerprinting, content/route discovery, WAF/edge detection and domain OSINT.
+  **No port scanners run** (the URL already names the origin and port).
+* **full** (36 tools) — both surfaces in one run.
+* **safe** (11 tools, default) — conservative baseline of network + HTTP + TLS with
+  polite limits: `nmap_discovery`, `tcp_scan`, `host_alive`, `service_banner`,
+  `dns_recon`, `dns_nslookup`, `http_posture`, `http_curl`, `tls_posture`,
+  `tls_openssl`, `advisory_match`.
+
+Every Web run also emits a `WebAssetInventory`: observed applications and
+technologies (with claimed versions and verification status), routes/endpoints
+(observed vs declared/spec-only), headers/cookies/TLS/auth-boundary
+observations, traceable evidence records, route/authentication coverage,
+provenance (source URL, tool version, time), uncertainties and explicitly
+unassessed routes. A declared route (robots/sitemap/API spec) is never treated
+as a vulnerability, and a 404/blocked crawl is a recorded gap, not a clean
+result.
+
+---
+
+## Evidence, verification and coverage
+
+The upgrade distinguishes an *observation* from a *verified fact*:
+
+| Field | Meaning |
+| --- | --- |
+| `observation_type` | `fingerprint_observed`, `banner_observed`, `version_claimed`, `version_verified`, `package_verified`, `unknown` |
+| `verification_status` | `unverified` (default), `verified`, `package_verified`, `rejected`, `unknown` |
+| `confidence` | `low`, `medium`, `high`, `unknown` |
+| `evidence` | Sanitised snippets plus the source tool/method/URL/time |
+
+* **Version validation:** `app/agents/technologies.py` accepts a candidate only
+  when it looks like a software version (digits plus optional dotted/suffix
+  parts). IP addresses, country names, MIME types (`application/json`) and
+  header directives (`max-age=2592000`) are rejected and retained as evidence
+  with an explicit uncertainty — they are never printed as versions.
+* **No silent promotion:** HTML/JS/WhatWeb/banner/header versions stay
+  `version_claimed`/`banner_observed` and `unverified`. `package_verified`
+  requires authenticated package inventory, which this non-destructive
+  external-probe agent does not collect.
+* **Duplicates and conflicts:** observations are merged by canonical technology
+  name; conflicting versions are preserved in `conflicting_versions` with a
+  `low` confidence uncertainty instead of being silently dropped.
+* **HTTP classification:** 2xx `success`, 3xx `redirect`, 401
+  `auth_required`, 403 `forbidden`, 404 `not_found`, 429 `rate_limited`,
+  5xx `server_error`, plus `timeout`, `dns_failure`, `tls_error` and
+  `connection_error`. A 403 is **not** attributed to Cloudflare; a vendor is
+  recorded only when specific CDN/WAF headers/cookies are present.
+* **Bounded retries:** only 429/5xx/timeouts/connection errors are retried, with
+  exponential backoff + jitter (`APS_HTTP_RETRIES`, `APS_HTTP_RETRY_BACKOFF`,
+  `APS_HTTP_RETRY_MAX_BACKOFF`, `APS_HTTP_RETRY_JITTER`). 401/403/404 are never
+  retried.
+* **Partial results:** `web_content` reports each well-known resource as
+  `retrieved`, `missing`, `inaccessible`, `network_error` or `parse failed`;
+  Gobuster records exit code, timeout, duration, attempted/untested counts and
+  preserves output on timeout. A zero-result Gobuster run is a clean `ok`, not
+  a failure, and never proves absence.
+* **Route coverage:** `RouteCoverage` reports attempted/confirmed/inaccessible/
+  failed/untested routes, executed/skipped methods and limitations. It stays
+  `limited`/`partial`/`unknown` when access controls, missing authentication or
+  tool failures prevent confirmation — never `full` just because every
+  configured candidate was attempted.
+* **Authentication coverage:** without an authorized profile the report says
+  `not_assessed`; supplied profiles are recorded but **not exercised** and are
+  marked `profiles_supplied_not_exercised`. The agent never guesses credentials,
+  sprays passwords or logs in.
+* **Final JSON report:** `POST /report.json` returns the standardised sections
+  `scan_metadata`, `scope_validation`, `assets`, `services`, `technologies`,
+  `web_observations`, `routes`, `evidence`, `tool_results` (success/partial/
+  failed/unavailable/skipped/not_run), `authentication_coverage`,
+  `route_coverage`, `uncertainties`, `errors` and `overall_status`, plus the
+  legacy `findings`/`web_inventory` keys.
+
+Details and test cases: [`docs/EVIDENCE_MODEL.md`](docs/EVIDENCE_MODEL.md).
 
 ---
 
@@ -228,7 +308,8 @@ services via the built-in TCP scanner.
 | POST | `/api/discovery` | Run Discovery against a contract input, return the contract result |
 | POST | `/api/scan` | Run an assessment, return the full state as JSON |
 | POST | `/scan` | Run and render the HTML dashboard |
-| POST | `/report` | Run and download a PDF report |
+| POST | `/report.json` | Run and download the **JSON report** (primary: findings, services, Web inventory, contract result) |
+| POST | `/report` | Run and download the optional PDF report |
 
 ---
 

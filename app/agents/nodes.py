@@ -169,6 +169,23 @@ def _merge_services(existing: list[dict], new_ports: list[dict], source: str) ->
     return sorted(merged.values(), key=lambda r: int(r.get("port", 0)))
 
 
+def _merge_banner_versions(services: list[dict], banners: dict[str, str]) -> list[dict]:
+    """Fill missing product/version on services from advertised banners."""
+    from app.agents.inventory import _parse_banner
+
+    updated: list[dict] = []
+    for service in services:
+        record = dict(service)
+        if not record.get("product") or not record.get("version"):
+            key = f"{record.get('port')}/{record.get('protocol', 'tcp')}"
+            banner = banners.get(str(record.get("port"))) or banners.get(key)
+            product, version = _parse_banner(banner)
+            record["product"] = record.get("product") or product
+            record["version"] = record.get("version") or version
+        updated.append(record)
+    return updated
+
+
 _FALLBACK_TRIGGERS = {ToolStatus.FAILED.value, ToolStatus.UNAVAILABLE.value}
 
 
@@ -219,6 +236,8 @@ def collect_node(state: AssessmentState) -> dict:
             errors.append(f"{name}: {payload['error']}")
         if payload.get("data", {}).get("ports"):
             services = _merge_services(services, payload["data"]["ports"], name)
+        if payload.get("data", {}).get("banners"):
+            services = _merge_banner_versions(services, payload["data"]["banners"])
 
         # Redundancy: if this tool failed or is unavailable, try an alternative
         # tool that performs the same capability (or an explicit fallback).
@@ -364,7 +383,8 @@ def validate_node(state: AssessmentState) -> dict:
     if http.get("status") == ToolStatus.OK.value:
         data = http.get("data", {})
         status = data.get("http_status", 0)
-        limited = status >= 400
+        response_class = data.get("response_class") or "unknown"
+        limited = response_class not in {"success", "redirect"}
         for header in data.get("missing_headers", []):
             add(
                 title=(f"Header posture observation: {header} absent" if limited else f"Missing security header: {header}"),
@@ -373,11 +393,18 @@ def validate_node(state: AssessmentState) -> dict:
                 confidence=Confidence.NEEDS_VALIDATION if limited else Confidence.CONFIRMED,
                 source_tool="http_posture",
                 source="http_posture",
-                detail=(f"HTTP {status} response from {data.get('url')} did not include {header}."
-                        + (" The response appears to be an access-control/CDN page, so validate on an application response." if limited else "")),
+                detail=(
+                    f"HTTP {status} ({response_class}) response from {data.get('url')} did not include {header}."
+                    + (
+                        " The response is classified as limited (access-control/CDN or error); the origin "
+                        "application response is unconfirmed, so validate on an application response."
+                        if limited
+                        else ""
+                    )
+                ),
                 remediation=f"Configure {header} per the application security policy (CWE-693 / OWASP A05:2021).",
                 query=f"missing {header} security header",
-                raw={"http_status": status},
+                raw={"http_status": status, "response_class": response_class},
             )
         for cookie in data.get("cookies", []):
             problems = []
@@ -605,6 +632,54 @@ def _incomplete_tools(results: dict[str, dict]) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# Normalize: raw fingerprints -> validated technology/evidence observations
+# ---------------------------------------------------------------------------
+
+
+def normalize_node(state: AssessmentState) -> dict:
+    """Normalise raw fingerprints and classify the transport outcome.
+
+    This node never upgrades an HTML/JS/banner/header value to a verified
+    version: rejected candidates (IPs, country names, MIME types, header
+    directives) are retained as evidence plus an explicit uncertainty.
+    """
+    from datetime import datetime, timezone
+
+    from app.agents.technologies import normalize_technologies
+    from app.agents.web_inventory import _raw_technologies
+
+    results = state.get("results", {})
+    origin = state.get("base_url") or state.get("target") or ""
+    observed_at = datetime.now(timezone.utc)
+    raw = _raw_technologies(
+        results.get("http_posture", {}).get("data", {}) or {},
+        results.get("whatweb", {}).get("data", {}) or {},
+        origin=origin,
+        observed_at=observed_at,
+    )
+    technologies, uncertainties = normalize_technologies(
+        raw, observed_at=observed_at, source_url=origin
+    )
+
+    response_classes = sorted(
+        {
+            payload.get("data", {}).get("response_class")
+            for payload in results.values()
+            if payload.get("data", {}).get("response_class")
+        }
+    )
+    return {
+        "technologies": [item.model_dump(mode="json") for item in technologies],
+        "technology_uncertainties": [item.model_dump(mode="json") for item in uncertainties],
+        "events": [
+            f"Normalized {len(technologies)} technology observation(s); "
+            f"{len(uncertainties)} uncertainty note(s). "
+            f"HTTP classes: {', '.join(response_classes) or 'none'}."
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
 # Project: state -> SentinelX Discovery contract result
 # ---------------------------------------------------------------------------
 
@@ -619,6 +694,7 @@ def project_node(state: AssessmentState) -> dict:
     from datetime import datetime, timezone
 
     from app.agents.inventory import build_common_output, build_inventory
+    from app.agents.web_inventory import build_web_inventory
     from app.contracts.common import RuntimeBinding
     from app.contracts.discovery import DiscoveryInput, DiscoveryResult
 
@@ -632,12 +708,18 @@ def project_node(state: AssessmentState) -> dict:
 
     observed_at = datetime.now(timezone.utc)
     inventory = build_inventory(state, inp, observed_at)
+    # Network-only scans do not produce a Web inventory (surface separation).
+    web_inventory = None
+    if state.get("profile", "safe") != "network":
+        web_inventory = build_web_inventory(state, inp, observed_at)
+    web_uncertainties = web_inventory.uncertainties if web_inventory else []
+    web_unassessed = web_inventory.unassessed_targets if web_inventory else []
     output = build_common_output(
         state,
         inp,
         services=inventory.services,
-        uncertainties=inventory.uncertainties,
-        unassessed=inventory.unassessed_targets,
+        uncertainties=inventory.uncertainties + web_uncertainties,
+        unassessed=inventory.unassessed_targets + web_unassessed,
         provenance=inventory.observation_provenance,
     )
     runtime = RuntimeBinding(
@@ -645,11 +727,19 @@ def project_node(state: AssessmentState) -> dict:
         run_id=inp.common.run_id,
         environment_id=inp.common.environment_id,
     )
-    result = DiscoveryResult(runtime=runtime, output=output, inventory=inventory)
+    result = DiscoveryResult(runtime=runtime, output=output, inventory=inventory, web_inventory=web_inventory)
+    events = [f"Discovery contract result: {output.status.value}."]
+    if web_inventory is not None:
+        events.append(
+            f"Web inventory: {len(web_inventory.applications)} application(s), "
+            f"{len(web_inventory.endpoints)} route(s), "
+            f"{len(web_inventory.web_observations)} observation(s)."
+        )
     return {
         "inventory": inventory.model_dump(mode="json"),
+        "web_inventory": web_inventory.model_dump(mode="json") if web_inventory else None,
         "agent_result": result.model_dump(mode="json"),
-        "events": [f"Discovery contract result: {output.status.value}."],
+        "events": events,
     }
 
 
@@ -661,6 +751,7 @@ __all__ = [
     "adapt_node",
     "route_after_adapt",
     "validate_node",
+    "normalize_node",
     "project_node",
     "new_state",
 ]

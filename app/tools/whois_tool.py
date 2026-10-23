@@ -62,7 +62,7 @@ def _parse(text: str) -> dict:
     effect_class=EffectClass.READ_ONLY,
     capability="whois",
     requires=("hostname",),
-    profiles=("web", "full"),
+    profiles=("web", "network", "full"),
     order=70,
 )
 def whois_lookup(ctx: ToolContext) -> ToolResult:

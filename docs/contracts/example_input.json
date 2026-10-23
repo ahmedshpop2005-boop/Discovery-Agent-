@@ -24,6 +24,7 @@
     "evidence_refs": [],
     "available_capabilities": [
       "host_alive@1.0",
+      "netdiscover@1.0",
       "nmap_discovery@1.0",
       "tcp_scan@1.0",
       "masscan_scan@1.0",
@@ -32,10 +33,13 @@
       "dns_nslookup@1.0",
       "reverse_dns@1.0",
       "dns_zone_transfer@1.0",
+      "dnsrecon@1.0",
       "http_posture@1.0",
       "http_curl@1.0",
       "tls_posture@1.0",
       "tls_openssl@1.0",
+      "whatweb@1.0",
+      "enum4linux_ng@1.0",
       "service_banner@1.0",
       "ssh_algorithms@1.0",
       "smtp_probe@1.0",
@@ -45,10 +49,14 @@
       "redis_probe@1.0",
       "mysql_probe@1.0",
       "web_content@1.0",
+      "gobuster_scan@1.0",
       "http_favicon@1.0",
       "http_waf_detect@1.0",
+      "wafw00f@1.0",
       "whois_lookup@1.0",
+      "amass_enum@1.0",
       "subdomain_enum@1.0",
+      "theharvester@1.0",
       "traceroute@1.0",
       "advisory_match@1.0"
     ],
@@ -82,5 +90,6 @@
     "source_network": null,
     "known_topology": []
   },
+  "web_context": null,
   "discovery_questions": []
 }

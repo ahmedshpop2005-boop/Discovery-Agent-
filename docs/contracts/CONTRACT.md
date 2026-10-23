@@ -40,19 +40,47 @@ python scripts/export_contracts.py
 | `known_inventory_refs` | no (default `[]`) | Prior observations (may be empty) |
 | `access_profiles` | no (default `[]`) | Identities/privileges; **secret material stays out** (only `secret_ref`) |
 | `network_context` | yes | `{runner_id, source_network, known_topology}` |
+| `web_context` | no | `{runner_origin, base_path, reverse_proxy, api_specs[], auth_flows[]}` |
 | `discovery_questions` | no (default `[]`) | Specific unanswered questions |
 
 ## 3. Discovery role-specific output: `AssetInventory`
 
 | Field | Content |
 | --- | --- |
-| `assets` | `{asset_id, identity, addresses[], os, os_basis, evidence_refs[]}` |
-| `services` | `{service_id, asset_id, port, transport, name, product, version, version_basis, authenticated, reachability, uncertainty[], evidence_refs[]}` |
+| `assets` | `{asset_id, identity, addresses[], os, os_basis, evidence[], evidence_refs[]}` |
+| `services` | `{service_id, asset_id, port, transport, name, product, version, version_basis, authenticated, reachability, uncertainty[], evidence[], evidence_refs[]}` |
 | `host_observations` | `{asset_id, category, key, value, basis, evidence_refs[]}` |
 | `relationship_proposals` | `{kind (observed\|inferred), from_ref, to_ref, relation, evidence_refs[]}` |
 | `observation_provenance` | `{observation_id, source_tool, tool_version, runner_id, identity, environment, observed_at, command, evidence_refs[]}` |
 | `uncertainties` | `{subject, detail, evidence_refs[]}` |
 | `unassessed_targets` | `{target, reason, category}` |
+
+## 3b. Web extension output: `WebAssetInventory`
+
+| Field | Content |
+| --- | --- |
+| `applications` | `{application_id, origin, identity, title, base_paths[], technologies[], server, waf, evidence_refs[]}` |
+| `technologies[]` | `{name, version, observation_type, verification_status, confidence, basis, evidence[], source_url, collection_method, observed_at, conflicting_versions[], evidence_refs[]}` |
+| `endpoints` | `{endpoint_id, application_id, path, method, parameters[], forms[], api_operation, observed, status, classification, collection_method, source, evidence[], limitations[], evidence_refs[]}` |
+| `forms[]` | `{action, method, parameters[]}` |
+| `web_observations` | `{application_id, category, key, value, basis, source_url, collection_method, evidence[], evidence_refs[]}` |
+| `evidence` | `{evidence_id, type, source_tool, target, status, snippet, observed_at, confidence, verification_status, limitations[], evidence_refs[]}` |
+| `route_coverage` | `{routes_attempted, routes_confirmed, routes_inaccessible, routes_failed, routes_untested, coverage_status, coverage_limitations[], methods_executed[], methods_skipped[]}` |
+| `authentication_coverage` | `{status, profiles_supplied, authenticated_profiles, checks_completed[], checks_unverified[], notes[]}` |
+| `relationship_proposals` | `{kind, from_ref, to_ref, relation, evidence_refs[]}` (app-on-origin, route-in-app, role-access, submits-data) |
+| `observation_provenance` | provenance **plus** `source_url` |
+| `uncertainties` | rejected versions, conflicting versions, declared-but-unrequested routes, blocked/4xx crawl, missing auth, coverage limitations |
+| `unassessed_targets` | declared routes, authenticated surface, unavailable tools (`category="unassessed-route"\|"access"\|"tooling"`) |
+
+`observed=true` means the route was requested and answered. Routes declared by
+robots.txt/sitemap/API spec/client-script are `observed=false` (spec-only) and are never
+treated as vulnerabilities. A 404 or blocked crawl is a recorded gap, not a clean result.
+
+A 401/403/429 base response is classified (`auth_required`/`forbidden`/`rate_limited`), is
+never attributed to a vendor without specific CDN/WAF headers, and forces
+`route_coverage.coverage_status` to `limited`. `versions` from HTML/JS/WhatWeb/banners/
+headers are `unverified` and must not be read as package versions. `evidence` is redacted
+and traceable; see [`../EVIDENCE_MODEL.md`](../EVIDENCE_MODEL.md).
 
 ## 4. Common output (every role)
 
@@ -67,7 +95,7 @@ python scripts/export_contracts.py
 | `concise_rationale` | Brief evidence-based explanation |
 | `next_objective` | Next objective, or `null` |
 
-The stored result is `DiscoveryResult = { runtime, output, inventory }`, where
+The stored result is `DiscoveryResult = { runtime, output, inventory, web_inventory? }`, where
 `runtime` holds `schema_version, workspace_id, run_id, environment_id, agent_id,
 model_call_id` — assigned by the trusted runtime, not the model.
 

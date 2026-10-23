@@ -1,0 +1,70 @@
+{
+  "$defs": {
+    "CoverageStatus": {
+      "enum": [
+        "full",
+        "partial",
+        "limited",
+        "unknown"
+      ],
+      "title": "CoverageStatus",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Honest route-discovery coverage summary.\n\n``coverage_status`` is never ``full`` merely because every configured\ncandidate was attempted: access-control responses, CDN pages, missing\nauthentication and tool failures force ``limited``/``partial``.",
+  "properties": {
+    "routes_attempted": {
+      "default": 0,
+      "title": "Routes Attempted",
+      "type": "integer"
+    },
+    "routes_confirmed": {
+      "default": 0,
+      "title": "Routes Confirmed",
+      "type": "integer"
+    },
+    "routes_inaccessible": {
+      "default": 0,
+      "title": "Routes Inaccessible",
+      "type": "integer"
+    },
+    "routes_failed": {
+      "default": 0,
+      "title": "Routes Failed",
+      "type": "integer"
+    },
+    "routes_untested": {
+      "default": 0,
+      "title": "Routes Untested",
+      "type": "integer"
+    },
+    "coverage_status": {
+      "$ref": "#/$defs/CoverageStatus",
+      "default": "unknown"
+    },
+    "coverage_limitations": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Coverage Limitations",
+      "type": "array"
+    },
+    "methods_executed": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Methods Executed",
+      "type": "array"
+    },
+    "methods_skipped": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Methods Skipped",
+      "type": "array"
+    }
+  },
+  "title": "RouteCoverage",
+  "type": "object"
+}

@@ -13,11 +13,13 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 import tempfile
 import time
 from pathlib import Path
 
 from app.config import settings
+from app.net.http import request_with_retries
 from app.tools.base import (
     EffectClass,
     ToolContext,
@@ -31,6 +33,7 @@ from app.tools.base import (
 from app.tools.registry import tool
 
 _GOBUSTER_LINE = re.compile(r"^(?P<path>/\S*)\s+\(Status:\s*(?P<status>\d+)\)(?:\s*\[Size:\s*(?P<size>\d+)\])?")
+_GOBUSTER_PROGRESS = re.compile(r"(?i)progress:\s*(?P<done>\d+)\s*/\s*(?P<total>\d+)")
 _WAFW00F_BEHIND = re.compile(r"is behind\s+(?P<name>.+?)(?:\s*\(|$)", re.IGNORECASE)
 
 _FALLBACK_WORDS = ["admin", "login", "api", "backup", "config", "uploads", "robots.txt", "sitemap.xml"]
@@ -95,6 +98,24 @@ def _parse_gobuster(stdout: str) -> list[dict]:
                 }
             )
     return found
+
+
+def _gobuster_progress(stdout: str) -> tuple[int, int | None]:
+    """Return ``(candidates_attempted, declared_total)`` from progress output."""
+    attempted = 0
+    total: int | None = None
+    for match in _GOBUSTER_PROGRESS.finditer(stdout):
+        attempted = max(attempted, int(match.group("done")))
+        total = int(match.group("total"))
+    return attempted, total
+
+
+def _tail(value: str | bytes | None, limit: int = 1200) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", "replace")
+    return value.strip()[-limit:]
 
 
 def _parse_wafw00f(stdout: str) -> dict:
@@ -172,37 +193,152 @@ def whatweb(ctx: ToolContext) -> ToolResult:
     order=62,
 )
 def gobuster_scan(ctx: ToolContext) -> ToolResult:
-    url = ctx.target.base_url
-    words = ctx.option("content_words") or _load_wordlist()
-    wordlist = _temp_file(".txt")
-    wordlist.write_text("\n".join(words), encoding="utf-8")
+    url = ctx.target.base_url.rstrip("/")
+    words = [word for word in (ctx.option("content_words") or _load_wordlist()) if str(word).strip()]
     safe_command = f"gobuster dir -u {url} -w common.txt ({len(words)} words)"
 
+    if not url.startswith(("http://", "https://")):
+        return failure("gobuster", "Target must be an http(s) base URL.", command=safe_command)
+    if not words:
+        return failure("gobuster", "No candidate words were supplied.", command=safe_command)
+    if which("gobuster") is None:
+        return unavailable("gobuster", "Gobuster is not installed.", command=safe_command)
+
+    # A base probe distinguishes "the site returns a uniform access-control
+    # page" from real path discovery without making extra aggressive requests.
+    base = request_with_retries(url, method="GET", retries=0)
+    base_status = base.status_code
+    base_class = base.response_class.value
+    edge_indicators = base.edge_indicators
+    suspicious_base = base_status in {401, 403, 429} or base.edge_likely or base_status is None
+
+    wordlist = _temp_file(".txt")
+    wordlist.write_text("\n".join(str(word) for word in words), encoding="utf-8")
+    command = [
+        "gobuster", "dir", "-u", url, "-w", str(wordlist),
+        "-q", "-t", "20", "--timeout", "5s", "--no-progress",
+    ]
+
+    started = time.perf_counter()
+    completed: subprocess.CompletedProcess[str] | None = None
+    timed_out = False
+    failure_error: str | None = None
     try:
-        if which("gobuster") is None:
-            return unavailable("gobuster", "Gobuster is not installed.", command=safe_command)
-        command = [
-            "gobuster", "dir", "-u", url, "-w", str(wordlist),
-            "-q", "-t", "20", "--timeout", "5s",
-        ]
-        started = time.perf_counter()
         completed = run_command(command, timeout=settings.nmap_timeout)
+    except subprocess.TimeoutExpired as exc:
+        timed_out = True
+        completed = subprocess.CompletedProcess(
+            args=command,
+            returncode=None,
+            stdout=exc.stdout or "",
+            stderr=exc.stderr or "",
+        )
+        failure_error = f"TimeoutExpired after {exc.timeout}s"
     except Exception as exc:
-        return failure("gobuster", f"Gobuster did not complete: {type(exc).__name__}", command=safe_command)
+        failure_error = f"{type(exc).__name__}: {exc}"
     finally:
         wordlist.unlink(missing_ok=True)
+        duration = int((time.perf_counter() - started) * 1000)
 
-    found = _parse_gobuster(completed.stdout)
-    duration = int((time.perf_counter() - started) * 1000)
+    raw_stdout = completed.stdout if completed else ""
+    raw_stderr = completed.stderr if completed else ""
+    stdout = _tail(raw_stdout)
+    stderr = _tail(raw_stderr)
+    found = _parse_gobuster(raw_stdout) if completed else []
+    attempted_progress, declared_total = _gobuster_progress(raw_stdout)
+
+    valid = [item for item in found if 200 <= int(item["status"]) < 400]
+    rejected = [item for item in found if int(item["status"]) in {401, 403, 429}]
+    server_errors = [item for item in found if int(item["status"]) >= 500]
+
+    if timed_out:
+        attempted = attempted_progress
+        untested = max(0, len(words) - attempted)
+    else:
+        attempted = len(words) if completed is not None else attempted_progress
+        untested = max(0, (declared_total or len(words)) - attempted)
+
+    # A uniform access-control/CDN response is not route discovery.
+    statuses = {int(item["status"]) for item in found}
+    uniform = bool(found) and len(statuses) == 1 and next(iter(statuses)) in {401, 403, 429, 500, 502, 503}
+    suspicious_uniform = uniform and suspicious_base
+    confirmed = [] if suspicious_uniform else valid
+
+    returncode = completed.returncode if completed else None
+    if failure_error and completed is None:
+        status = "failed"
+        summary = f"Gobuster did not run: {failure_error}"
+    elif timed_out:
+        status = "partial" if found else "failed"
+        summary = (
+            f"Gobuster timed out after {attempted}/{len(words)} candidate(s); "
+            f"{len(found)} response(s) were preserved."
+        )
+    elif returncode not in (0, None):
+        status = "partial" if found else "failed"
+        summary = f"Gobuster exited with code {returncode}; {len(found)} response(s) preserved."
+    else:
+        status = "ok"
+        if found:
+            summary = f"{len(found)} path(s) discovered across {len(words)} candidate(s)."
+        else:
+            summary = f"Gobuster completed cleanly with zero responses across {len(words)} candidate(s)."
+
+    data = {
+        "paths": found,
+        "confirmed_paths": confirmed,
+        "tested": len(words),
+        "attempted": attempted,
+        "untested": untested,
+        "valid_responses": len(valid),
+        "rejected_responses": len(rejected),
+        "server_error_responses": len(server_errors),
+        "returncode": returncode,
+        "timed_out": timed_out,
+        "completed": completed is not None and not timed_out,
+        "zero_result_success": status == "ok" and not found,
+        "duration_ms": duration,
+        "stdout_tail": stdout,
+        "stderr_tail": stderr,
+        "base_status": base_status,
+        "base_response_class": base_class,
+        "base_edge_indicators": edge_indicators,
+        "uniform_response": uniform,
+        "suspicious_uniform": suspicious_uniform,
+    }
     return ToolResult(
         tool="gobuster",
-        status="ok" if found else "partial",
-        summary=f"{len(found)} path(s) discovered across {len(words)} candidate(s).",
-        data={"paths": found, "tested": len(words)},
-        evidence=[evidence("gobuster", f"{p['path']} -> {p['status']}") for p in found[:12]],
+        status=status,
+        summary=summary,
+        data=data,
+        evidence=[
+            evidence(
+                "gobuster",
+                f"base URL: HTTP {base_status} ({base_class})"
+                + (f"; edge indicators: {', '.join(edge_indicators)}" if edge_indicators else ""),
+                url=url,
+                status=base_status,
+                response_class=base_class,
+            )
+        ]
+        + [
+            evidence(
+                "gobuster",
+                f"{item['path']} -> HTTP {item['status']}"
+                + (" (uniform access-control response; not confirmed)" if suspicious_uniform else ""),
+                url=url + item["path"],
+                status=item["status"],
+            )
+            for item in found[:12]
+        ],
         command=safe_command,
-        note="Directory discovery only; no exhaustive brute force.",
+        note=(
+            "Directory discovery only; no exhaustive brute force. "
+            "Zero results do not mean no paths exist. Uniform 401/403/429 or CDN "
+            "responses are recorded as inaccessible, not as discovered routes."
+        ),
         duration_ms=duration,
+        error=failure_error,
     )
 
 

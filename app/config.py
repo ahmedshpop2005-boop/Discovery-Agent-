@@ -69,6 +69,12 @@ class Settings:
     socket_timeout: float = _env_float("APS_SOCKET_TIMEOUT", 6.0)
     nmap_timeout: float = _env_float("APS_NMAP_TIMEOUT", 120.0)
 
+    # Bounded HTTP retries (transient failures only; 401/403/404 never retried)
+    http_retries: int = _env_int("APS_HTTP_RETRIES", 2)
+    http_retry_backoff: float = _env_float("APS_HTTP_RETRY_BACKOFF", 0.3)
+    http_retry_max_backoff: float = _env_float("APS_HTTP_RETRY_MAX_BACKOFF", 4.0)
+    http_retry_jitter: float = _env_float("APS_HTTP_RETRY_JITTER", 0.2)
+
     # Scan envelopes (safe defaults)
     tcp_scan_max_ports: int = _env_int("APS_TCP_SCAN_MAX_PORTS", 1024)
     tcp_scan_concurrency: int = _env_int("APS_TCP_SCAN_CONCURRENCY", 200)

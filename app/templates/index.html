@@ -14,7 +14,7 @@
       <h1>AutoPentest <i>Sentinel</i></h1>
       <p>Evidence-first, non-destructive assessment for authorized systems.</p>
     </div>
-    <div class="shield"><span>&#10022;</span><small>SAFE<br>PROFILE</small></div>
+    <div class="shield"><span>&#10022;</span><small>{{ (profile or 'safe')|upper }}<br>PROFILE</small></div>
   </header>
 
   <section class="card">
@@ -25,10 +25,18 @@
         <input name="target" value="{{ target or '' }}" placeholder="https://client.example.com or 10.0.0.5" required>
       </label>
       <div class="row">
-        <label>Assessment profile
+        <label>Scan surface / profile
           <select name="profile">
             {% for p in profiles %}
-              <option value="{{ p }}" {% if (profile or 'safe') == p %}selected{% endif %}>{{ p }}</option>
+              {% if p == 'network' %}
+                <option value="{{ p }}" {% if (profile or 'safe') == p %}selected{% endif %}>Network surface (network tools)</option>
+              {% elif p == 'web' %}
+                <option value="{{ p }}" {% if (profile or 'safe') == p %}selected{% endif %}>Web surface (web tools)</option>
+              {% elif p == 'full' %}
+                <option value="{{ p }}" {% if (profile or 'safe') == p %}selected{% endif %}>Full (network + web)</option>
+              {% else %}
+                <option value="{{ p }}" {% if (profile or 'safe') == p %}selected{% endif %}>Safe (baseline)</option>
+              {% endif %}
             {% endfor %}
           </select>
         </label>
@@ -39,7 +47,7 @@
       <label class="check"><input type="checkbox" name="consent" value="true" required> I confirm I am authorized to assess this target.</label>
       <button type="submit"><span>Run assessment</span><em>&#8599;</em></button>
     </form>
-    <p class="hint">Non-destructive profiles: service discovery, DNS, HTTP posture, TLS posture, banners and well-known content. No exploitation, brute force or destructive testing.</p>
+    <p class="hint"><b>Network</b> runs host/port/service/DNS/TLS probes. <b>Web</b> runs HTTP, TLS, fingerprinting, content and API/route discovery. <b>Full</b> runs both. Non-destructive only: no exploitation, brute force or state-changing requests.</p>
   </section>
 
   {% if result %}
@@ -57,6 +65,13 @@
       <div class="metrics">
         <div><b>{{ result.findings|length }}</b><span>Observations</span></div>
         <div><b>{{ result.services|length }}</b><span>Open services</span></div>
+        {% if result.web_inventory is defined and result.web_inventory %}
+          <div><b>{{ result.web_inventory.applications|length }}</b><span>Web apps</span></div>
+          <div><b>{{ result.web_inventory.endpoints|length }}</b><span>Web routes</span></div>
+          {% if result.web_inventory.route_coverage %}
+            <div><b>{{ result.web_inventory.route_coverage.coverage_status }}</b><span>Route coverage</span></div>
+          {% endif %}
+        {% endif %}
         <div><b>{{ result.results|length }}</b><span>Tools executed</span></div>
         <div><b>{{ result.profile|default('safe') }}</b><span>Profile</span></div>
       </div>
@@ -100,24 +115,137 @@
       <div class="console-head" style="margin-top:22px"><span>02 / ATTACK SURFACE</span><span>{{ result.services|length }} SERVICES</span></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Port</th><th>Proto</th><th>Service</th><th>Product / Version</th><th>Source</th></tr></thead>
+          <thead><tr><th>Port</th><th>Proto</th><th>Service</th><th>Product</th><th>Version</th><th>Source</th></tr></thead>
           <tbody>
           {% for service in result.services %}
             <tr>
               <td>{{ service.port }}</td>
               <td>{{ service.protocol }}</td>
               <td><span class="open">{{ service.service }}</span></td>
-              <td>{{ service.product or 'Not identified' }} {{ service.version or '' }}</td>
+              <td>{{ service.product or 'Not identified' }}</td>
+              <td>{{ service.version or '—' }}</td>
               <td>{{ service.source or '—' }}</td>
             </tr>
           {% else %}
-            <tr><td colspan="5" class="empty">No open services were observed. This is not evidence of full coverage.</td></tr>
+            <tr><td colspan="6" class="empty">No open services were observed. This is not evidence of full coverage.</td></tr>
           {% endfor %}
           </tbody>
         </table>
       </div>
 
-      <div class="console-head" style="margin-top:22px"><span>03 / EVIDENCE REVIEW</span><span>{{ result.findings|length }} FINDINGS</span></div>
+      {% if result.web_inventory is defined and result.web_inventory %}
+      <div class="console-head" style="margin-top:22px"><span>03 / WEB SURFACE</span><span>{{ result.web_inventory.endpoints|length }} ROUTES</span></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Application / Origin</th><th>Title</th><th>Technologies (version)</th><th>Server</th><th>WAF / Edge</th></tr></thead>
+          <tbody>
+          {% for app in result.web_inventory.applications %}
+            <tr>
+              <td>{{ app.origin }}</td>
+              <td>{{ app.title or app.identity or '—' }}</td>
+              <td>
+                {% for tech in app.technologies %}
+                  {{ tech.name }}{% if tech.version %} <b>{{ tech.version }}</b> <small>({{ tech.verification_status }})</small>{% endif %}
+                  {% if tech.conflicting_versions %}<small>conflicts: {{ tech.conflicting_versions|join(', ') }}</small>{% endif %}
+                  {% if not loop.last %}, {% endif %}
+                {% else %}—{% endfor %}
+              </td>
+              <td>{{ app.server or '—' }}</td>
+              <td>{{ app.waf or '—' }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="console-head" style="margin-top:18px"><span>ROUTES / ENDPOINTS</span><span>{{ result.web_inventory.endpoints|length }}</span></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Method</th><th>Path</th><th>Status</th><th>Class</th><th>Parameters / Forms</th><th>Source</th><th>Observed</th></tr></thead>
+          <tbody>
+          {% for ep in result.web_inventory.endpoints %}
+            <tr>
+              <td>{{ ep.method }}</td>
+              <td>{{ ep.path }}</td>
+              <td>{{ ep.status if ep.status is not none else '—' }}</td>
+              <td>{{ ep.classification }}</td>
+              <td>{{ ep.parameters|join(', ') if ep.parameters else '—' }}{% if ep.forms %} <small>({{ ep.forms|length }} form(s))</small>{% endif %}</td>
+              <td>{{ ep.source }}</td>
+              <td>{{ 'yes' if ep.observed else 'declared / spec-only' }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="7" class="empty">No Web routes were observed.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="console-head" style="margin-top:18px"><span>WEB OBSERVATIONS</span><span>{{ result.web_inventory.web_observations|length }}</span></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Category</th><th>Key</th><th>Value</th></tr></thead>
+          <tbody>
+          {% for ob in result.web_inventory.web_observations %}
+            <tr><td>{{ ob.category }}</td><td>{{ ob.key }}</td><td>{{ ob.value }}</td></tr>
+          {% else %}
+            <tr><td colspan="3" class="empty">No Web observations were collected.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      {% set coverage = result.web_inventory.route_coverage %}
+      {% if coverage %}
+      <div class="console-head" style="margin-top:18px"><span>ROUTE COVERAGE</span><span>{{ coverage.coverage_status|upper }}</span></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Attempted</th><th>Confirmed</th><th>Inaccessible</th><th>Failed / missing</th><th>Untested</th><th>Methods executed</th><th>Methods skipped</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>{{ coverage.routes_attempted }}</td>
+              <td>{{ coverage.routes_confirmed }}</td>
+              <td>{{ coverage.routes_inaccessible }}</td>
+              <td>{{ coverage.routes_failed }}</td>
+              <td>{{ coverage.routes_untested }}</td>
+              <td>{{ coverage.methods_executed|join(', ') if coverage.methods_executed else '—' }}</td>
+              <td>{{ coverage.methods_skipped|join(', ') if coverage.methods_skipped else '—' }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      {% if coverage.coverage_limitations %}
+        <div class="limitations">
+          <span>&#9888;</span>
+          <div><b>Route coverage is {{ coverage.coverage_status }}</b><p>{{ coverage.coverage_limitations|join(' · ') }}</p></div>
+        </div>
+      {% endif %}
+      {% endif %}
+
+      {% set auth = result.web_inventory.authentication_coverage %}
+      {% if auth %}
+      <div class="console-head" style="margin-top:18px"><span>AUTHENTICATION COVERAGE</span><span>{{ auth.status|upper|replace('_', ' ') }}</span></div>
+      <div class="limitations">
+        <span>&#128274;</span>
+        <div>
+          <b>{{ auth.profiles_supplied }} profile(s) · {{ auth.authenticated_profiles }} authenticated</b>
+          <p>{{ auth.notes|join(' ') }}</p>
+          <p>Completed: {{ auth.checks_completed|join(', ') if auth.checks_completed else '—' }} · Unverified: {{ auth.checks_unverified|join(', ') if auth.checks_unverified else '—' }}</p>
+        </div>
+      </div>
+      {% endif %}
+
+      {% if result.web_inventory.uncertainties %}
+        <div class="limitations">
+          <span>&#9888;</span>
+          <div>
+            <b>Web inventory uncertainties</b>
+            <p>{% for u in result.web_inventory.uncertainties %}{{ u.detail }}{% if not loop.last %} · {% endif %}{% endfor %}</p>
+          </div>
+        </div>
+      {% endif %}
+      {% endif %}
+
+      <div class="console-head" style="margin-top:22px"><span>04 / EVIDENCE REVIEW</span><span>{{ result.findings|length }} FINDINGS</span></div>
       <section class="findings">
         {% for item in result.findings %}
           <article>
@@ -136,17 +264,26 @@
       </section>
 
       <section class="activity">
-        <div class="section-tag">04 / WORKFLOW TRACE</div>
+        <div class="section-tag">05 / WORKFLOW TRACE</div>
         <h2>LangGraph decision trail</h2>
         <ol>
           {% for event in result.events %}<li><span>&#10003;</span>{{ event }}</li>{% endfor %}
         </ol>
-        <form action="/report" method="post">
-          <input type="hidden" name="target" value="{{ target }}">
-          <input type="hidden" name="profile" value="{{ result.profile|default('safe') }}">
-          <input type="hidden" name="consent" value="true">
-          <button class="secondary" type="submit">Download analyst PDF <em>&#8595;</em></button>
-        </form>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <form action="/report.json" method="post">
+            <input type="hidden" name="target" value="{{ target }}">
+            <input type="hidden" name="profile" value="{{ result.profile|default('safe') }}">
+            <input type="hidden" name="consent" value="true">
+            <button class="secondary" type="submit">Download JSON report <em>&#8681;</em></button>
+          </form>
+          <form action="/report" method="post">
+            <input type="hidden" name="target" value="{{ target }}">
+            <input type="hidden" name="profile" value="{{ result.profile|default('safe') }}">
+            <input type="hidden" name="consent" value="true">
+            <button class="secondary" type="submit">Download PDF (optional) <em>&#8595;</em></button>
+          </form>
+        </div>
+        <p class="hint">JSON is the primary report (full evidence + contract result). PDF stays available as an optional analyst document.</p>
       </section>
     {% endif %}
   </section>

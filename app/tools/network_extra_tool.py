@@ -43,7 +43,7 @@ def _tcp_open(host: str, port: int, timeout: float) -> bool:
     effect_class=EffectClass.PASSIVE,
     capability="host_discovery",
     requires=("host",),
-    profiles=("safe", "web", "network", "full"),
+    profiles=("safe", "network", "full"),
     order=5,
 )
 def host_alive(ctx: ToolContext) -> ToolResult:

@@ -13,7 +13,7 @@ from app.agents.graph import run_assessment, run_discovery
 from app.config import ROOT, settings
 from app.contracts import DiscoveryInput, SCHEMA_MODELS
 from app.llm import provider as llm_provider
-from app.reporting import build_report
+from app.reporting import build_json_report, build_report
 from app.tools.registry import all_specs, specs_for_profile
 
 router = APIRouter()
@@ -110,6 +110,21 @@ def api_scan(
 ) -> JSONResponse:
     result = run_assessment(target=target, consent=consent, profile=profile)
     return JSONResponse(result)
+
+
+@router.post("/report.json")
+def report_json(
+    target: str = Form(""),
+    consent: bool = Form(True),
+    profile: str = Form("safe"),
+) -> JSONResponse:
+    """Download the assessment as a machine-readable JSON report."""
+    result = run_assessment(target=target, consent=consent, profile=profile)
+    filename = f"pentest-report-{datetime.now().strftime('%Y%m%d-%H%M%S')}.json"
+    return JSONResponse(
+        build_json_report(result),
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post("/report")

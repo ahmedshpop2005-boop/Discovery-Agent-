@@ -3,7 +3,7 @@
     guard ──▶ plan ──▶ collect ──▶ adapt ──┐
       │                         ▲          │
       └─(blocked)─▶ END         └──(more)──┘
-                                └─(done)──▶ validate ──▶ project ──▶ END
+                                └─(done)──▶ validate ──▶ normalize ──▶ project ──▶ END
 
 The final ``project`` node converts the collected observations into the
 SentinelX Discovery contract result (``AssetInventory`` + common output), so the
@@ -20,6 +20,7 @@ from app.agents.nodes import (
     adapt_node,
     collect_node,
     guard_node,
+    normalize_node,
     plan_node,
     project_node,
     route_after_adapt,
@@ -37,6 +38,7 @@ def build_graph():
     graph.add_node("collect", collect_node)
     graph.add_node("adapt", adapt_node)
     graph.add_node("validate", validate_node)
+    graph.add_node("normalize", normalize_node)
     graph.add_node("project", project_node)
 
     graph.set_entry_point("guard")
@@ -44,7 +46,8 @@ def build_graph():
     graph.add_edge("plan", "collect")
     graph.add_edge("collect", "adapt")
     graph.add_conditional_edges("adapt", route_after_adapt, {"collect": "collect", "validate": "validate"})
-    graph.add_edge("validate", "project")
+    graph.add_edge("validate", "normalize")
+    graph.add_edge("normalize", "project")
     graph.add_edge("project", END)
     return graph.compile()
 
@@ -95,16 +98,22 @@ def _project_blocked(state: AssessmentState, inp: DiscoveryInput) -> dict:
     from datetime import datetime, timezone
 
     from app.agents.inventory import build_common_output, build_inventory
+    from app.agents.web_inventory import build_web_inventory
     from app.contracts.common import RuntimeBinding
 
     observed_at = datetime.now(timezone.utc)
     inventory = build_inventory(state, inp, observed_at)
+    web_inventory = None
+    if state.get("profile", "safe") != "network":
+        web_inventory = build_web_inventory(state, inp, observed_at)
+    web_uncertainties = web_inventory.uncertainties if web_inventory else []
+    web_unassessed = web_inventory.unassessed_targets if web_inventory else []
     output = build_common_output(
         state,
         inp,
         services=inventory.services,
-        uncertainties=inventory.uncertainties,
-        unassessed=inventory.unassessed_targets,
+        uncertainties=inventory.uncertainties + web_uncertainties,
+        unassessed=inventory.unassessed_targets + web_unassessed,
         provenance=inventory.observation_provenance,
     )
     runtime = RuntimeBinding(
@@ -112,4 +121,6 @@ def _project_blocked(state: AssessmentState, inp: DiscoveryInput) -> dict:
         run_id=inp.common.run_id,
         environment_id=inp.common.environment_id,
     )
-    return DiscoveryResult(runtime=runtime, output=output, inventory=inventory).model_dump(mode="json")
+    return DiscoveryResult(
+        runtime=runtime, output=output, inventory=inventory, web_inventory=web_inventory
+    ).model_dump(mode="json")

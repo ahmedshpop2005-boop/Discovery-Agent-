@@ -66,6 +66,7 @@ def build_report(result: dict[str, Any], destination: Path | None = None) -> Pat
     _section_limitations(story, styles, result)
     _section_tools(story, styles, result)
     _section_findings(story, styles, result)
+    _section_web(story, styles, result)
     _section_appendix(story, styles, result)
 
     SimpleDocTemplate(
@@ -163,6 +164,105 @@ def _section_findings(story, styles, result) -> None:
             sources = ", ".join(sorted({r.get("source", "") for r in refs}))
             story.append(Paragraph(f"<i>Knowledge references: {sources}</i>", styles["Normal"]))
         story.append(Spacer(1, 8))
+
+
+def _section_web(story, styles, result) -> None:
+    web = result.get("web_inventory") or {}
+    applications = web.get("applications") or []
+    endpoints = web.get("endpoints") or []
+    if not applications and not endpoints:
+        return
+    story.append(Paragraph("Web application surface", styles["Heading2"]))
+    if applications:
+        rows = [["Origin", "Title", "Technologies (version)", "Server", "WAF"]]
+        for app in applications:
+            technologies = ", ".join(
+                f"{tech.get('name', '')}"
+                + (f" {tech.get('version')}" if tech.get("version") else "")
+                + (f" ({tech.get('verification_status')})" if tech.get("version") else "")
+                for tech in app.get("technologies") or []
+            )
+            rows.append(
+                [
+                    str(app.get("origin", ""))[:40],
+                    str(app.get("title") or app.get("identity") or "")[:40],
+                    technologies[:80],
+                    str(app.get("server") or "")[:30],
+                    str(app.get("waf") or "")[:30],
+                ]
+            )
+        table = Table(rows, colWidths=[38 * mm, 34 * mm, 45 * mm, 20 * mm, 21 * mm])
+        table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1e293b")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                    ("FONTSIZE", (0, 0), (-1, -1), 8),
+                    ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#cbd5f5")),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ]
+            )
+        )
+        story.append(table)
+        story.append(Spacer(1, 8))
+    if endpoints:
+        story.append(Paragraph("Observed routes / endpoints", styles["Heading3"]))
+        rows = [["Method", "Path", "Status", "Observed", "Source"]]
+        for endpoint in endpoints[:80]:
+            rows.append(
+                [
+                    str(endpoint.get("method", "GET")),
+                    str(endpoint.get("path", ""))[:60],
+                    str(endpoint.get("status") if endpoint.get("status") is not None else ""),
+                    "yes" if endpoint.get("observed", True) else "declared",
+                    str(endpoint.get("source", ""))[:30],
+                ]
+            )
+        table = Table(rows, colWidths=[16 * mm, 60 * mm, 18 * mm, 24 * mm, 40 * mm])
+        table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1e293b")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                    ("FONTSIZE", (0, 0), (-1, -1), 8),
+                    ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#cbd5f5")),
+                ]
+            )
+        )
+        story.append(table)
+        story.append(Spacer(1, 8))
+
+    coverage = web.get("route_coverage") or {}
+    if coverage:
+        story.append(Paragraph("Route coverage", styles["Heading3"]))
+        story.append(
+            Paragraph(
+                f"Status: <b>{coverage.get('coverage_status', 'unknown')}</b> · "
+                f"attempted {coverage.get('routes_attempted', 0)}, "
+                f"confirmed {coverage.get('routes_confirmed', 0)}, "
+                f"inaccessible {coverage.get('routes_inaccessible', 0)}, "
+                f"failed {coverage.get('routes_failed', 0)}, "
+                f"untested {coverage.get('routes_untested', 0)}",
+                styles["Normal"],
+            )
+        )
+        for limitation in coverage.get("coverage_limitations") or []:
+            story.append(Paragraph(f"• {limitation}", styles["Normal"]))
+        story.append(Spacer(1, 8))
+
+    auth = web.get("authentication_coverage") or {}
+    if auth:
+        story.append(Paragraph("Authentication coverage", styles["Heading3"]))
+        story.append(
+            Paragraph(
+                f"Status: <b>{auth.get('status', 'not_assessed')}</b> · "
+                f"{auth.get('profiles_supplied', 0)} profile(s), "
+                f"{auth.get('authenticated_profiles', 0)} authenticated. "
+                + " ".join(auth.get("notes") or []),
+                styles["Normal"],
+            )
+        )
+        story.append(Spacer(1, 10))
 
 
 def _section_appendix(story, styles, result) -> None:

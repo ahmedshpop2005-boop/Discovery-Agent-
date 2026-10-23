@@ -76,7 +76,7 @@ async def _scan(host: str, ports: list[int], timeout: float, concurrency: int) -
     capability="port_discovery",
     priority=20,
     requires=("host",),
-    profiles=("safe", "web", "network", "full"),
+    profiles=("safe", "network", "full"),
     order=20,
 )
 def tcp_scan(ctx: ToolContext) -> ToolResult:

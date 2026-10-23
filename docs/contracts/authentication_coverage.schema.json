@@ -1,0 +1,44 @@
+{
+  "additionalProperties": false,
+  "description": "What was and was not assessed regarding authenticated/role surfaces.",
+  "properties": {
+    "status": {
+      "default": "not_assessed",
+      "title": "Status",
+      "type": "string"
+    },
+    "profiles_supplied": {
+      "default": 0,
+      "title": "Profiles Supplied",
+      "type": "integer"
+    },
+    "authenticated_profiles": {
+      "default": 0,
+      "title": "Authenticated Profiles",
+      "type": "integer"
+    },
+    "checks_completed": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Checks Completed",
+      "type": "array"
+    },
+    "checks_unverified": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Checks Unverified",
+      "type": "array"
+    },
+    "notes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Notes",
+      "type": "array"
+    }
+  },
+  "title": "AuthenticationCoverage",
+  "type": "object"
+}

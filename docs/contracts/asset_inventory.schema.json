@@ -41,6 +41,13 @@
           ],
           "default": null
         },
+        "evidence": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
         "evidence_refs": {
           "items": {
             "type": "string"
@@ -298,6 +305,13 @@
             "type": "string"
           },
           "title": "Uncertainty",
+          "type": "array"
+        },
+        "evidence": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence",
           "type": "array"
         },
         "evidence_refs": {

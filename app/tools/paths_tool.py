@@ -4,16 +4,18 @@ Retrieves ``/robots.txt``, ``/sitemap.xml`` and ``/.well-known/security.txt``.
 These are published, low-impact resources. Paths listed in robots.txt are
 reported as *observations* that name areas of interest - they are not probed
 or brute-forced.
+
+Each resource has an independent outcome (retrieved / missing / inaccessible /
+parse failure / network error) so a missing file is never confused with a
+blocked request or a broken parser.
 """
 
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 
-import httpx
-
-from app.config import settings
-from app.safety.redaction import redact
+from app.net.http import request_with_retries
 from app.tools.base import EffectClass, ToolContext, ToolResult, evidence
 from app.tools.registry import tool
 
@@ -27,6 +29,35 @@ _LOC_RE = re.compile(r"(?im)^\s*Sitemap:\s*(\S+)")
 _SITEMAP_LOC_RE = re.compile(r"(?is)<loc>\s*(.*?)\s*</loc>")
 _DISALLOW_RE = re.compile(r"(?im)^\s*Disallow:\s*(\S+)")
 
+_INACCESSIBLE = {401, 403, 429}
+
+
+def _parse_robots(text: str) -> dict:
+    return {
+        "disallow": sorted(set(_DISALLOW_RE.findall(text)))[:60],
+        "sitemaps": sorted(set(_LOC_RE.findall(text)))[:20],
+    }
+
+
+def _parse_sitemap(text: str) -> dict:
+    return {"urls": sorted(set(_SITEMAP_LOC_RE.findall(text)))[:80]}
+
+
+def _parse_security_txt(text: str) -> dict:
+    return {
+        "fields": [
+            line.strip() for line in text.splitlines() if line.strip() and not line.startswith("#")
+        ][:20]
+    }
+
+
+def _parse(path: str, text: str) -> dict:
+    if path == "/robots.txt":
+        return _parse_robots(text)
+    if path == "/sitemap.xml":
+        return _parse_sitemap(text)
+    return _parse_security_txt(text)
+
 
 @tool(
     name="web_content",
@@ -39,52 +70,108 @@ _DISALLOW_RE = re.compile(r"(?im)^\s*Disallow:\s*(\S+)")
     order=60,
 )
 def web_content(ctx: ToolContext) -> ToolResult:
-    base = ctx.target.base_url
+    base = ctx.target.base_url.rstrip("/")
+    observed_at = datetime.now(timezone.utc)
+    requested = ctx.option("well_known_paths") or WELL_KNOWN
+    paths: list[str] = []
+    for candidate in requested:
+        path = str(candidate).strip()
+        if path.startswith("/") and "://" not in path and path not in paths:
+            paths.append(path)
+    resources: dict[str, dict] = {}
     found: dict[str, dict] = {}
+    missing: list[str] = []
+    inaccessible: list[str] = []
+    parse_errors: list[str] = []
     errors: list[str] = []
+    network_failures = 0
 
-    for path in WELL_KNOWN:
-        url = base.rstrip("/") + path
-        try:
-            response = httpx.get(
-                url,
-                timeout=settings.http_timeout,
-                follow_redirects=True,
-                headers={"User-Agent": settings.user_agent},
-            )
-        except httpx.HTTPError as exc:
-            errors.append(f"{path}: {redact(str(exc))}")
-            continue
-        if response.status_code != 200:
-            continue
-        body = response.text[:20000]
-        entry: dict = {"status": response.status_code, "size": len(body), "content_type": response.headers.get("content-type")}
-        if path == "/robots.txt":
-            entry["disallow"] = sorted(set(_DISALLOW_RE.findall(body)))[:60]
-            entry["sitemaps"] = sorted(set(_LOC_RE.findall(body)))[:20]
-        elif path == "/sitemap.xml":
-            entry["urls"] = sorted(set(_SITEMAP_LOC_RE.findall(body)))[:80]
-        else:  # security.txt
-            entry["fields"] = [
-                line.strip() for line in body.splitlines() if line.strip() and not line.startswith("#")
-            ][:20]
-        found[path] = entry
+    for path in paths:
+        url = base + path
+        result = request_with_retries(url, method="GET", follow_redirects=True)
+        entry: dict = {
+            "url": url,
+            "final_url": result.final_url,
+            "status": result.status_code,
+            "response_class": result.response_class.value,
+            "content_type": result.content_type,
+            "size": len(result.body),
+            "retrieved": False,
+            "redirected": bool(result.redirect_chain),
+            "attempts": result.attempts,
+            "retries": result.retries,
+            "observed_at": observed_at.isoformat(),
+        }
+        if result.status_code is None:
+            entry["outcome"] = "network_error"
+            entry["error"] = result.error or result.response_class.value
+            errors.append(f"{path}: {entry['error']}")
+            network_failures += 1
+        elif result.ok:
+            entry["outcome"] = "retrieved"
+            entry["retrieved"] = True
+            try:
+                entry.update(_parse(path, result.text[:20000]))
+                entry["parse_status"] = "ok"
+            except Exception as exc:  # malformed content must not abort the tool
+                entry["parse_status"] = "failed"
+                entry["parse_error"] = f"{type(exc).__name__}: {exc}"
+                parse_errors.append(f"{path}: {entry['parse_error']}")
+            found[path] = entry
+        elif result.status_code in _INACCESSIBLE:
+            entry["outcome"] = "inaccessible"
+            inaccessible.append(path)
+        elif result.status_code == 404:
+            entry["outcome"] = "missing"
+            missing.append(path)
+        else:
+            entry["outcome"] = "http_error"
+        resources[path] = entry
 
-    if not found:
-        return ToolResult(
-            tool="web_content",
-            status="partial",
-            summary="None of the well-known files were retrievable.",
-            data={"found": {}, "errors": errors},
-            note="Absence of these files is not evidence of security.",
-            command=f"GET {base}{{robots.txt,sitemap.xml,security.txt}}",
+    tested = len(WELL_KNOWN)
+    if network_failures == tested:
+        status = "failed"
+        summary = f"All {tested} well-known requests failed at the network layer."
+    elif found and not errors and not parse_errors:
+        status = "ok"
+        summary = f"{len(found)} well-known resource(s) retrieved."
+    else:
+        status = "partial"
+        summary = (
+            f"{len(found)}/{tested} retrieved, {len(missing)} missing, "
+            f"{len(inaccessible)} inaccessible, {len(parse_errors)} parse failure(s), "
+            f"{network_failures} network error(s)."
         )
+
+    evidence_items = [
+        evidence(
+            "web_content",
+            f"{path}: HTTP {entry.get('status')} ({entry.get('size', 0)} bytes, {entry.get('outcome')})",
+            url=entry.get("url"),
+            status=entry.get("status"),
+            outcome=entry.get("outcome"),
+        )
+        for path, entry in resources.items()
+    ]
 
     return ToolResult(
         tool="web_content",
-        status="ok",
-        summary=f"{len(found)} well-known resource(s) retrieved.",
-        data={"found": found, "errors": errors},
-        evidence=[evidence("web_content", f"{path}: HTTP 200 ({entry['size']} bytes)") for path, entry in found.items()],
+        status=status,
+        summary=summary,
+        data={
+            "found": found,
+            "resources": resources,
+            "missing": missing,
+            "inaccessible": inaccessible,
+            "parse_errors": parse_errors,
+            "errors": errors,
+            "tested": tested,
+            "retrieved": len(found),
+        },
+        evidence=evidence_items,
+        note=(
+            "Absence of these files is not evidence that the site has no other content; "
+            "a missing, inaccessible and unparsable resource are reported separately."
+        ),
         command=f"GET {base}{{robots.txt,sitemap.xml,security.txt}}",
     )

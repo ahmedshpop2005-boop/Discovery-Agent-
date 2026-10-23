@@ -38,8 +38,13 @@ class AssessmentState(TypedDict, total=False):
     findings: list[dict[str, Any]]
     status: str
 
+    # Normalised evidence (filled by the normalize node)
+    technologies: list[dict[str, Any]]
+    technology_uncertainties: list[dict[str, Any]]
+
     # SentinelX Discovery contract output
     inventory: dict[str, Any]
+    web_inventory: dict[str, Any]
     agent_result: dict[str, Any]
 
     # Traces (merge-friendly)

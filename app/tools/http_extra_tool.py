@@ -45,7 +45,7 @@ _WAF_SIGNATURES = {
     capability="http_headers",
     priority=20,
     requires=("base_url",),
-    profiles=("safe", "web", "network", "full"),
+    profiles=("safe", "web", "full"),
     order=31,
 )
 def http_curl(ctx: ToolContext) -> ToolResult:

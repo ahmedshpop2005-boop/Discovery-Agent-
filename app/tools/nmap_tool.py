@@ -61,7 +61,7 @@ def _parse_nmap_xml(xml_text: str) -> list[dict]:
     capability="port_discovery",
     priority=10,
     requires=("host",),
-    profiles=("safe", "web", "network", "full"),
+    profiles=("safe", "network", "full"),
     order=10,
 )
 def nmap_discovery(ctx: ToolContext) -> ToolResult:

@@ -35,7 +35,14 @@ The Discovery agent consumes the SentinelX shared **input** and returns the **`A
 (+ common output): assets, services, host_observations, relationship_proposals,
 observation_provenance, uncertainties, unassessed_targets, with status
 `DONE/MORE_WORK/BLOCKED/NEEDS_REVIEW/FAILED`. Strict Pydantic + JSON Schema; a banner version is
-labelled and an unreachable host is never "DONE". See `docs/contracts/CONTRACT.md`.
+labelled and an unreachable host is never "DONE".
+
+**Web extension 02:** Web scans also return a **`WebAssetInventory`** — applications
+(origin, title, technologies + versions), endpoints (observed vs declared/spec-only),
+web_observations (headers, cookies, TLS, auth boundaries, client scripts), provenance
+(source URL, tool version, time), uncertainties and unassessed routes. Profile selection
+separates surfaces: `network` (27 tools, no HTTP), `web` (17 tools, no port scanners),
+`full` (36, both). See `docs/contracts/CONTRACT.md`.
 
 ## 5. Live demo (3 minutes)
 1. Start the app, scan an authorized target.

@@ -56,7 +56,7 @@ def _resolves(fqdn: str) -> list[str]:
     effect_class=EffectClass.READ_ONLY,
     capability="subdomain",
     requires=("hostname",),
-    profiles=("full",),
+    profiles=("network", "full"),
     order=80,
 )
 def subdomain_enum(ctx: ToolContext) -> ToolResult:

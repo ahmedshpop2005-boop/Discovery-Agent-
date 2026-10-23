@@ -19,10 +19,17 @@ Common `ToolResult` shape:
 }
 ```
 
-## Profiles
+## Profiles (scan surfaces)
 
-`safe` (default) · `web` · `network` · `full`. A tool runs only if its `profiles` include the
-selected profile **and** its `requires` are satisfied.
+| Profile | Tools | Surface |
+| --- | --- | --- |
+| `safe` (default) | 11 | conservative network + HTTP + TLS baseline |
+| `network` | 27 | host/port/service/DNS/TLS — **no HTTP/Web tools** |
+| `web` | 17 | HTTP/TLS/fingerprint/content/routes/OSINT — **no port scanners** |
+| `full` | 36 | network + web together |
+
+A tool runs only if its `profiles` include the selected profile **and** its `requires` are
+satisfied. `full` bypasses the per-tool `profiles` list and includes every registered tool.
 
 ## Capabilities & redundancy
 
@@ -58,6 +65,7 @@ falls back to the built-in tool that shares its capability (see the table above)
 ## NETWORK
 
 ### `nmap_discovery` — Nmap service/version discovery
+* **Profiles:** `safe`, `network`, `full` · **Requires:** `host`
 * **Command:** `nmap -sV --version-light --top-ports <n> -T3 -oX - <host>`
 * **Options:** `top_ports` (default 100), `aggressive` (default 1000 for network/full)
 * **Output:** `data.ports[]` = `{host, port, protocol, service, product, version, cpe}`
@@ -68,13 +76,14 @@ falls back to the built-in tool that shares its capability (see the table above)
 * **Degrades:** `unavailable` when masscan is absent.
 
 ### `tcp_scan` — Built-in asynchronous TCP connect scan
+* **Profiles:** `safe`, `network`, `full` · **Requires:** `host`
 * **Options:** `tcp_preset` (`common` | `web` | `top100`), `tcp_ports` (explicit list),
   `tcp_timeout`, `tcp_concurrency`
 * **Output:** `data.ports[]` = `{port, protocol, service, product, version}` plus `scanned`, `preset`
 * **Why:** dependency-free discovery that works when Nmap is absent.
 
 ### `host_alive` — Host liveness check
-* **Capability:** `host_discovery`
+* **Capability:** `host_discovery` · **Profiles:** `safe`, `network`, `full`
 * **Behaviour:** ICMP ping (when available) plus a quick TCP-connect check on common ports.
 * **Output:** `data.icmp`, `data.tcp[]`.
 
@@ -142,7 +151,7 @@ JSON report. No credential attacks are performed; when the binary is absent the 
 * **Note:** success is a finding (full zone disclosure); refusal is the normal/expected result.
 
 ### `subdomain_enum` — DNS-only subdomain enumeration
-* **Profiles:** `full` only (opt-in)
+* **Profiles:** `network`, `full`
 * **Options:** `subdomain_words`
 * **Wordlist:** `data/wordlists/subdomains.txt` (bounded by `APS_SUBDOMAIN_LIMIT`, default 60)
 * **Output:** `data.subdomains` = `{ "<fqdn>": ["<ip>", ...] }`
@@ -166,7 +175,7 @@ JSON report. No credential attacks are performed; when the binary is absent the 
 * **Note:** public sources only; an empty result is not proof of absence.
 
 ### `whois_lookup` — Registration lookup
-* **Requires:** hostname · **Transport:** TCP/43 with IANA referral
+* **Profiles:** `web`, `network`, `full` · **Requires:** hostname · **Transport:** TCP/43 with IANA referral
 * **Output:** `data.fields` = registrar, creation/expiry dates, name servers, status
 
 ---
@@ -174,12 +183,18 @@ JSON report. No credential attacks are performed; when the binary is absent the 
 ## WEB / TLS
 
 ### `http_posture` — HTTP security posture
+* **Profiles:** `safe`, `web`, `full` · **Requires:** `base_url`
 * **Requests:** base `GET`, one `OPTIONS`, one `Origin` probe (rate-conscious)
-* **Output:** `http_status`, redacted `headers`, `missing_headers`, `present_headers`,
+* **Output:** `http_status`, `response_class`, `limited`, `edge_indicators`, `attempts`,
+  `retries`, `retry_reasons`, redacted `headers`, `missing_headers`, `present_headers`,
   `cookies[]` (`secure`/`httponly`/`samesite`), `methods`, `cors`, `technology`, `title`,
-  `redirect`
-* **Note:** a 4xx/CDN response is recorded and downgraded in the validator — never treated as an
-  application observation.
+  `redirect`, `forms[]`, `links[]`, `scripts[]`, `api_hints[]`, `external_links`,
+  `www_authenticate`, `body_snippet`
+* **Retries:** 429/5xx/timeouts/connection errors only, bounded exponential backoff + jitter;
+  401/403/404 are never retried.
+* **Note:** a 4xx/CDN response is classified as limited and downgraded in the validator — never
+  treated as an application observation. A 403 is not attributed to a vendor without specific
+  CDN/WAF indicators.
 
 ### `tls_posture` — TLS certificate & protocol posture
 * **Options:** `tls_port` (default 443)
@@ -187,7 +202,8 @@ JSON report. No credential attacks are performed; when the binary is absent the 
   `certificate{ subject, issuer, not_after, days_until_expiry, subject_alt_names, self_signed }`
 
 ### `http_curl` — HTTP headers via curl *(fallback)*
-* **Capability:** `http_headers` (priority 20) · **Backend:** the `curl` binary
+* **Capability:** `http_headers` (priority 20) · **Profiles:** `safe`, `web`, `full`
+* **Backend:** the `curl` binary
 * **Output:** `status_line`, redacted `headers`, `security_headers_present`
 * **Degrades:** `unavailable` when curl is absent.
 
@@ -218,15 +234,24 @@ JSON report. No credential attacks are performed; when the binary is absent the 
 
 ### `gobuster_scan` — Directory/content discovery *(primary)*
 * **Capability:** `web_content` (priority 40) · **Profiles:** `web`, `full`
-* **Command:** `gobuster dir -u <url> -w <wordlist> -q -t 20 --timeout 5s`
+* **Command:** `gobuster dir -u <url> -w <wordlist> -q -t 20 --timeout 5s --no-progress`
 * **Wordlist:** `data/wordlists/common.txt` (bounded; override with option `content_words`)
-* **Output:** `data.paths[]` = `{path, status, size}`, `data.tested`
-* **Degrades:** `unavailable` when Gobuster is absent · **Note:** bounded discovery, not brute force.
+* **Output:** `data.paths[]`, `confirmed_paths[]`, `tested`, `attempted`, `untested`,
+  `valid_responses`, `rejected_responses`, `server_error_responses`, `returncode`, `timed_out`,
+  `completed`, `duration_ms`, `base_status`, `base_response_class`, `suspicious_uniform`,
+  `zero_result_success`, `stdout_tail`, `stderr_tail`
+* **Degrades:** `unavailable` when Gobuster is absent. A completed zero-result scan is `ok`;
+  a timeout with output is `partial` and preserves output. Uniform 401/403/429 responses are
+  inaccessible, not discovered routes. **Note:** bounded discovery, not brute force.
 
 ### `web_content` — Well-known content discovery *(fallback)*
 * **Profiles:** `web`, `full`
 * **Fetches:** `/robots.txt`, `/sitemap.xml`, `/.well-known/security.txt`
-* **Output:** `data.found` = per-path `{status, size, disallow[], sitemaps[], urls[], fields[]}`
+* **Output:** `data.found`, `data.resources` (per path: `status`, `response_class`, `outcome`,
+  `retrieved`, `attempts`, `retries`, `parse_status`, `parse_error`), `data.missing`,
+  `data.inaccessible`, `data.parse_errors`, `data.errors`, `data.tested`, `data.retrieved`
+* **Note:** a missing resource is not proof of no content; missing, inaccessible and parse
+  failures are reported separately.
 
 ---
 

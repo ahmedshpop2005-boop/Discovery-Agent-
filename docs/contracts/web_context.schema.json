@@ -1,0 +1,51 @@
+{
+  "additionalProperties": false,
+  "description": "Runner/proxy/API context needed to interpret Web responses.\n\nKept separate from :class:`NetworkContext` so the Web surface can be\ndescribed without leaking session secrets (only protected references).",
+  "properties": {
+    "runner_origin": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Runner Origin"
+    },
+    "base_path": {
+      "default": "/",
+      "title": "Base Path",
+      "type": "string"
+    },
+    "reverse_proxy": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reverse Proxy"
+    },
+    "api_specs": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Api Specs",
+      "type": "array"
+    },
+    "auth_flows": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Auth Flows",
+      "type": "array"
+    }
+  },
+  "title": "WebContext",
+  "type": "object"
+}

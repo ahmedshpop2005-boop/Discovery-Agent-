@@ -127,6 +127,113 @@ EXAMPLE_OUTPUT = {
         ],
         "unassessed_targets": [],
     },
+    "web_inventory": {
+        "applications": [
+            {
+                "application_id": "app:https://demo.example.com",
+                "origin": "https://demo.example.com",
+                "identity": "Demo Portal",
+                "title": "Demo Portal",
+                "base_paths": ["/"],
+                "technologies": [
+                    {
+                        "name": "nginx",
+                        "version": "1.25.3",
+                        "basis": "banner",
+                        "evidence_refs": ["prov:whatweb"],
+                    }
+                ],
+                "server": "nginx/1.25.3",
+                "waf": "Cloudflare",
+                "evidence_refs": ["prov:http_posture"],
+            }
+        ],
+        "endpoints": [
+            {
+                "endpoint_id": "endpoint:https://demo.example.com:GET /",
+                "application_id": "app:https://demo.example.com",
+                "path": "/",
+                "method": "GET",
+                "parameters": [],
+                "forms": [],
+                "api_operation": None,
+                "observed": True,
+                "status": 200,
+                "source": "http_posture",
+                "evidence_refs": ["prov:http_posture"],
+            },
+            {
+                "endpoint_id": "endpoint:https://demo.example.com:GET /admin",
+                "application_id": "app:https://demo.example.com",
+                "path": "/admin",
+                "method": "GET",
+                "parameters": [],
+                "forms": [],
+                "api_operation": "robots-declared",
+                "observed": False,
+                "status": None,
+                "source": "web_content:robots",
+                "evidence_refs": ["prov:web_content"],
+            },
+        ],
+        "web_observations": [
+            {
+                "application_id": "app:https://demo.example.com",
+                "category": "http",
+                "key": "title",
+                "value": "Demo Portal",
+                "basis": "configuration",
+                "evidence_refs": ["prov:http_posture"],
+            }
+        ],
+        "relationship_proposals": [
+            {
+                "kind": "observed",
+                "from_ref": "app:https://demo.example.com",
+                "to_ref": "origin:https://demo.example.com",
+                "relation": "app-on-origin",
+                "evidence_refs": ["prov:http_posture"],
+            },
+            {
+                "kind": "inferred",
+                "from_ref": "endpoint:https://demo.example.com:GET /admin",
+                "to_ref": "app:https://demo.example.com",
+                "relation": "route-in-app",
+                "evidence_refs": ["prov:web_content"],
+            },
+        ],
+        "observation_provenance": [
+            {
+                "observation_id": "prov:http_posture",
+                "source_tool": "http_posture",
+                "tool_version": "1.0",
+                "runner_id": "runner-local",
+                "identity": "external-probe",
+                "environment": "REAL",
+                "observed_at": "2026-10-16T10:00:00Z",
+                "command": "GET https://demo.example.com",
+                "evidence_refs": [],
+                "source_url": "https://demo.example.com",
+            }
+        ],
+        "uncertainties": [
+            {
+                "subject": "app:https://demo.example.com",
+                "detail": (
+                    "no authenticated access profile was supplied; authenticated routes "
+                    "and role boundaries were not observed"
+                ),
+                "evidence_refs": [],
+            }
+        ],
+        "unassessed_targets": [
+            {
+                "target": "https://demo.example.com/admin",
+                "reason": "declared in robots.txt but not fetched (non-destructive crawl limit)",
+                "category": "unassessed-route",
+            }
+        ],
+    },
 }
 
 

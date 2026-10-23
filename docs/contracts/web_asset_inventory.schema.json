@@ -1,0 +1,887 @@
+{
+  "$defs": {
+    "AuthenticationCoverage": {
+      "additionalProperties": false,
+      "description": "What was and was not assessed regarding authenticated/role surfaces.",
+      "properties": {
+        "status": {
+          "default": "not_assessed",
+          "title": "Status",
+          "type": "string"
+        },
+        "profiles_supplied": {
+          "default": 0,
+          "title": "Profiles Supplied",
+          "type": "integer"
+        },
+        "authenticated_profiles": {
+          "default": 0,
+          "title": "Authenticated Profiles",
+          "type": "integer"
+        },
+        "checks_completed": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Checks Completed",
+          "type": "array"
+        },
+        "checks_unverified": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Checks Unverified",
+          "type": "array"
+        },
+        "notes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Notes",
+          "type": "array"
+        }
+      },
+      "title": "AuthenticationCoverage",
+      "type": "object"
+    },
+    "ConfidenceLevel": {
+      "enum": [
+        "high",
+        "medium",
+        "low",
+        "unknown"
+      ],
+      "title": "ConfidenceLevel",
+      "type": "string"
+    },
+    "CoverageStatus": {
+      "enum": [
+        "full",
+        "partial",
+        "limited",
+        "unknown"
+      ],
+      "title": "CoverageStatus",
+      "type": "string"
+    },
+    "EndpointRecord": {
+      "additionalProperties": false,
+      "description": "A route/template observed on the wire or declared by a spec.\n\n``observed`` is ``True`` only when the endpoint was actually requested and\nanswered. Routes declared by robots.txt/sitemap/OpenAPI but not requested\nare ``observed=False`` (spec-only) and are never inferred to be vulnerable.",
+      "properties": {
+        "endpoint_id": {
+          "title": "Endpoint Id",
+          "type": "string"
+        },
+        "application_id": {
+          "title": "Application Id",
+          "type": "string"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "method": {
+          "default": "GET",
+          "title": "Method",
+          "type": "string"
+        },
+        "parameters": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Parameters",
+          "type": "array"
+        },
+        "forms": {
+          "items": {
+            "$ref": "#/$defs/FormRecord"
+          },
+          "title": "Forms",
+          "type": "array"
+        },
+        "api_operation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Api Operation"
+        },
+        "observed": {
+          "default": true,
+          "title": "Observed",
+          "type": "boolean"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        },
+        "classification": {
+          "default": "unknown",
+          "title": "Classification",
+          "type": "string"
+        },
+        "collection_method": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Collection Method"
+        },
+        "source": {
+          "default": "unknown",
+          "title": "Source",
+          "type": "string"
+        },
+        "evidence": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
+        "limitations": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Limitations",
+          "type": "array"
+        },
+        "evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "endpoint_id",
+        "application_id",
+        "path"
+      ],
+      "title": "EndpointRecord",
+      "type": "object"
+    },
+    "EnvironmentKind": {
+      "enum": [
+        "REAL",
+        "TWIN"
+      ],
+      "title": "EnvironmentKind",
+      "type": "string"
+    },
+    "EvidenceRecord": {
+      "additionalProperties": false,
+      "description": "A traceable piece of evidence behind an asset/service/route observation.",
+      "properties": {
+        "evidence_id": {
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        },
+        "source_tool": {
+          "title": "Source Tool",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        },
+        "snippet": {
+          "default": "",
+          "title": "Snippet",
+          "type": "string"
+        },
+        "observed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed At"
+        },
+        "confidence": {
+          "$ref": "#/$defs/ConfidenceLevel",
+          "default": "unknown"
+        },
+        "verification_status": {
+          "$ref": "#/$defs/VerificationStatus",
+          "default": "unverified"
+        },
+        "limitations": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Limitations",
+          "type": "array"
+        },
+        "evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "evidence_id",
+        "type",
+        "source_tool",
+        "target"
+      ],
+      "title": "EvidenceRecord",
+      "type": "object"
+    },
+    "FormRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "default": "",
+          "title": "Action",
+          "type": "string"
+        },
+        "method": {
+          "default": "GET",
+          "title": "Method",
+          "type": "string"
+        },
+        "parameters": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Parameters",
+          "type": "array"
+        }
+      },
+      "title": "FormRecord",
+      "type": "object"
+    },
+    "ObservationBasis": {
+      "description": "How an observation was obtained.\n\n``BANNER`` means an advertised/unauthenticated string. It must not be\ntreated as authenticated package evidence (see the Networking example:\n\"Label the version as a banner observation until authenticated package\nevidence supports it\").",
+      "enum": [
+        "banner",
+        "authenticated-package",
+        "configuration",
+        "inferred"
+      ],
+      "title": "ObservationBasis",
+      "type": "string"
+    },
+    "RelationshipKind": {
+      "enum": [
+        "observed",
+        "inferred"
+      ],
+      "title": "RelationshipKind",
+      "type": "string"
+    },
+    "RelationshipProposal": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/RelationshipKind",
+          "default": "observed"
+        },
+        "from_ref": {
+          "title": "From Ref",
+          "type": "string"
+        },
+        "to_ref": {
+          "title": "To Ref",
+          "type": "string"
+        },
+        "relation": {
+          "title": "Relation",
+          "type": "string"
+        },
+        "evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "from_ref",
+        "to_ref",
+        "relation"
+      ],
+      "title": "RelationshipProposal",
+      "type": "object"
+    },
+    "RouteCoverage": {
+      "additionalProperties": false,
+      "description": "Honest route-discovery coverage summary.\n\n``coverage_status`` is never ``full`` merely because every configured\ncandidate was attempted: access-control responses, CDN pages, missing\nauthentication and tool failures force ``limited``/``partial``.",
+      "properties": {
+        "routes_attempted": {
+          "default": 0,
+          "title": "Routes Attempted",
+          "type": "integer"
+        },
+        "routes_confirmed": {
+          "default": 0,
+          "title": "Routes Confirmed",
+          "type": "integer"
+        },
+        "routes_inaccessible": {
+          "default": 0,
+          "title": "Routes Inaccessible",
+          "type": "integer"
+        },
+        "routes_failed": {
+          "default": 0,
+          "title": "Routes Failed",
+          "type": "integer"
+        },
+        "routes_untested": {
+          "default": 0,
+          "title": "Routes Untested",
+          "type": "integer"
+        },
+        "coverage_status": {
+          "$ref": "#/$defs/CoverageStatus",
+          "default": "unknown"
+        },
+        "coverage_limitations": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Coverage Limitations",
+          "type": "array"
+        },
+        "methods_executed": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Methods Executed",
+          "type": "array"
+        },
+        "methods_skipped": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Methods Skipped",
+          "type": "array"
+        }
+      },
+      "title": "RouteCoverage",
+      "type": "object"
+    },
+    "TechnologyObservationType": {
+      "description": "How a technology/version was obtained.\n\nOnly ``VERSION_VERIFIED`` (independent validation) and\n``PACKAGE_VERIFIED`` (authenticated package inventory) may ever be\npresented as verified; everything derived from HTML, JavaScript, banners\nor HTTP headers stays a claim/fingerprint.",
+      "enum": [
+        "fingerprint_observed",
+        "banner_observed",
+        "version_claimed",
+        "version_verified",
+        "package_verified",
+        "unknown"
+      ],
+      "title": "TechnologyObservationType",
+      "type": "string"
+    },
+    "TechnologyRecord": {
+      "additionalProperties": false,
+      "description": "Normalised technology observation.\n\nThe normaliser never promotes arbitrary metadata (country names, IPs,\nheader directives, MIME types) to a version. HTML/JS/banner/header values\nare ``version_claimed``/``banner_observed`` and remain ``unverified``\nunless an independent check validated them.",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        },
+        "observation_type": {
+          "$ref": "#/$defs/TechnologyObservationType",
+          "default": "fingerprint_observed"
+        },
+        "verification_status": {
+          "$ref": "#/$defs/VerificationStatus",
+          "default": "unverified"
+        },
+        "confidence": {
+          "$ref": "#/$defs/ConfidenceLevel",
+          "default": "low"
+        },
+        "basis": {
+          "$ref": "#/$defs/ObservationBasis",
+          "default": "banner"
+        },
+        "evidence": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
+        "source_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Url"
+        },
+        "collection_method": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Collection Method"
+        },
+        "observed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed At"
+        },
+        "conflicting_versions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Conflicting Versions",
+          "type": "array"
+        },
+        "evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "TechnologyRecord",
+      "type": "object"
+    },
+    "UnassessedTarget": {
+      "additionalProperties": false,
+      "properties": {
+        "target": {
+          "title": "Target",
+          "type": "string"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "category": {
+          "default": "unsupported",
+          "title": "Category",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target",
+        "reason"
+      ],
+      "title": "UnassessedTarget",
+      "type": "object"
+    },
+    "Uncertainty": {
+      "additionalProperties": false,
+      "properties": {
+        "subject": {
+          "title": "Subject",
+          "type": "string"
+        },
+        "detail": {
+          "title": "Detail",
+          "type": "string"
+        },
+        "evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "subject",
+        "detail"
+      ],
+      "title": "Uncertainty",
+      "type": "object"
+    },
+    "VerificationStatus": {
+      "enum": [
+        "unverified",
+        "verified",
+        "package_verified",
+        "rejected",
+        "unknown"
+      ],
+      "title": "VerificationStatus",
+      "type": "string"
+    },
+    "WebApplication": {
+      "additionalProperties": false,
+      "properties": {
+        "application_id": {
+          "title": "Application Id",
+          "type": "string"
+        },
+        "origin": {
+          "title": "Origin",
+          "type": "string"
+        },
+        "identity": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Identity"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        },
+        "base_paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Base Paths",
+          "type": "array"
+        },
+        "technologies": {
+          "items": {
+            "$ref": "#/$defs/TechnologyRecord"
+          },
+          "title": "Technologies",
+          "type": "array"
+        },
+        "server": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Server"
+        },
+        "waf": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Waf"
+        },
+        "evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "application_id",
+        "origin"
+      ],
+      "title": "WebApplication",
+      "type": "object"
+    },
+    "WebObservationProvenance": {
+      "additionalProperties": false,
+      "description": "Provenance that also names the URL/path the observation came from.",
+      "properties": {
+        "observation_id": {
+          "title": "Observation Id",
+          "type": "string"
+        },
+        "source_tool": {
+          "title": "Source Tool",
+          "type": "string"
+        },
+        "tool_version": {
+          "default": "1.0",
+          "title": "Tool Version",
+          "type": "string"
+        },
+        "runner_id": {
+          "title": "Runner Id",
+          "type": "string"
+        },
+        "identity": {
+          "default": "external-probe",
+          "title": "Identity",
+          "type": "string"
+        },
+        "environment": {
+          "$ref": "#/$defs/EnvironmentKind"
+        },
+        "observed_at": {
+          "format": "date-time",
+          "title": "Observed At",
+          "type": "string"
+        },
+        "command": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Command"
+        },
+        "evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Refs",
+          "type": "array"
+        },
+        "source_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Url"
+        }
+      },
+      "required": [
+        "observation_id",
+        "source_tool",
+        "runner_id",
+        "environment",
+        "observed_at"
+      ],
+      "title": "WebObservationProvenance",
+      "type": "object"
+    },
+    "WebObservationRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "application_id": {
+          "title": "Application Id",
+          "type": "string"
+        },
+        "category": {
+          "title": "Category",
+          "type": "string"
+        },
+        "key": {
+          "title": "Key",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
+        },
+        "basis": {
+          "$ref": "#/$defs/ObservationBasis",
+          "default": "configuration"
+        },
+        "source_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Url"
+        },
+        "collection_method": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Collection Method"
+        },
+        "evidence": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
+        "evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "application_id",
+        "category",
+        "key",
+        "value"
+      ],
+      "title": "WebObservationRecord",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "applications": {
+      "items": {
+        "$ref": "#/$defs/WebApplication"
+      },
+      "title": "Applications",
+      "type": "array"
+    },
+    "endpoints": {
+      "items": {
+        "$ref": "#/$defs/EndpointRecord"
+      },
+      "title": "Endpoints",
+      "type": "array"
+    },
+    "web_observations": {
+      "items": {
+        "$ref": "#/$defs/WebObservationRecord"
+      },
+      "title": "Web Observations",
+      "type": "array"
+    },
+    "evidence": {
+      "items": {
+        "$ref": "#/$defs/EvidenceRecord"
+      },
+      "title": "Evidence",
+      "type": "array"
+    },
+    "route_coverage": {
+      "$ref": "#/$defs/RouteCoverage"
+    },
+    "authentication_coverage": {
+      "$ref": "#/$defs/AuthenticationCoverage"
+    },
+    "relationship_proposals": {
+      "items": {
+        "$ref": "#/$defs/RelationshipProposal"
+      },
+      "title": "Relationship Proposals",
+      "type": "array"
+    },
+    "observation_provenance": {
+      "items": {
+        "$ref": "#/$defs/WebObservationProvenance"
+      },
+      "title": "Observation Provenance",
+      "type": "array"
+    },
+    "uncertainties": {
+      "items": {
+        "$ref": "#/$defs/Uncertainty"
+      },
+      "title": "Uncertainties",
+      "type": "array"
+    },
+    "unassessed_targets": {
+      "items": {
+        "$ref": "#/$defs/UnassessedTarget"
+      },
+      "title": "Unassessed Targets",
+      "type": "array"
+    }
+  },
+  "title": "WebAssetInventory",
+  "type": "object"
+}
