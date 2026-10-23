@@ -347,14 +347,15 @@ autopentest-sentinel/
 │  ├─ main.py                 FastAPI app
 │  ├─ config.py               settings and safe defaults
 │  ├─ api/routes.py           HTTP + JSON endpoints
-│  ├─ agents/                 state · nodes · graph · inventory (LangGraph + projection)
+│  ├─ agents/                 state · nodes · graph · inventory · technologies · web_inventory
 │  ├─ contracts/              SentinelX common + Discovery contract models
+│  ├─ net/http.py             classified HTTP client (retries, edge detection)
 │  ├─ tools/                  base · registry · one module per tool
 │  ├─ safety/                 authorization.py · redaction.py
 │  ├─ models/schemas.py       Finding / EvidenceItem (Pydantic)
 │  ├─ knowledge/retrieval.py  local remediation retrieval
 │  ├─ llm/                    optional OpenAI-compatible planner (provider · reasoning)
-│  └─ reporting/pdf.py        PDF report builder
+│  └─ reporting/              json_report.py (primary) · pdf.py (optional)
 ├─ data/knowledge/            remediation knowledge base + advisories.json
 ├─ data/wordlists/            subdomain wordlist
 ├─ docs/                      TOOL_CATALOG, PRESENTATION_OUTLINE, contracts/
